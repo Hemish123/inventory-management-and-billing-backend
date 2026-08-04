@@ -76,12 +76,8 @@ class DashboardStatsView(APIView):
         low_stock_count = sum(
             1 for bs in stock_qs if bs.quantity < bs.product.minimum_stock_level
         )
-        if request.user.role_name == 'EMPLOYEE':
-            qs = qs.filter(cashier=request.user)
 
         pending_purchases_qs = Purchase.objects.filter(company=request.user.company, status__in=['DRAFT', 'ORDERED', 'PARTIAL'])
-        if request.user.role_name == 'EMPLOYEE':
-            qs = qs.filter(created_by=request.user)
         if request.user.role_name == 'EMPLOYEE':
             pending_purchases_qs = pending_purchases_qs.filter(created_by=request.user)
         pending_purchases = pending_purchases_qs.count()
@@ -165,14 +161,14 @@ class SalesTrendView(APIView):
         thirty_days_ago = timezone.now().date() - timedelta(days=30)
 
         qs = Bill.objects.filter(company=request.user.company, status='COMPLETED', billing_date__date__gte=thirty_days_ago)
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
         daily = qs.annotate(day=TruncDate('billing_date')).values('day').annotate(
             total=Sum('grand_total'), count=Count('id')
-        )
-        if request.user.role_name == 'EMPLOYEE':
-            qs = qs.filter(cashier=request.user).order_by('day')
+        ).order_by('day')
 
         data = [{'date': d['day'].isoformat(), 'revenue': float(d['total'] or 0), 'bills': d['count']} for d in daily]
         return api_response(data=data)
