@@ -1,0 +1,75 @@
+/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/jwt/utils.py:7: CryptographyDeprecationWarning: Python 3.8 is no longer supported by the Python core team and support for it is deprecated in cryptography. The next release of cryptography will remove support for Python 3.8.
+  from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurve
+ERROR 2026-08-03 11:26:08,554 [django.request] Internal Server Error: /api/core/branches/
+Traceback (most recent call last):
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/core/handlers/base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/views/decorators/csrf.py", line 56, in wrapper_view
+    return view_func(*args, **kwargs)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/home/nikita/Desktop/Projects/inventory management billing system/msme-paytrack/backend/apps/core/views.py", line 23, in create
+    return api_response(data=serializer.data, message='Branch created',
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/serializers.py", line 571, in data
+    ret = super().data
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/serializers.py", line 538, in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/fields.py", line 1870, in to_representation
+    return method(value)
+  File "/home/nikita/Desktop/Projects/inventory management billing system/msme-paytrack/backend/apps/core/serializers.py", line 24, in get_staff_count
+    return obj.staff.count()
+AttributeError: 'Branch' object has no attribute 'staff'
+Traceback (most recent call last):
+  File "test_branch.py", line 18, in <module>
+    response = client.post('/api/core/branches/', {'name': 'Test3', 'code': 'T03'}, content_type='application/json', HTTP_AUTHORIZATION=f'Bearer {access_token}')
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/test/client.py", line 951, in post
+    response = super().post(
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/test/client.py", line 482, in post
+    return self.generic(
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/test/client.py", line 609, in generic
+    return self.request(**r)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/test/client.py", line 894, in request
+    self.check_exception(response)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/test/client.py", line 741, in check_exception
+    raise exc_value
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/core/handlers/base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/django/views/decorators/csrf.py", line 56, in wrapper_view
+    return view_func(*args, **kwargs)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/home/nikita/Desktop/Projects/inventory management billing system/msme-paytrack/backend/apps/core/views.py", line 23, in create
+    return api_response(data=serializer.data, message='Branch created',
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/serializers.py", line 571, in data
+    ret = super().data
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/serializers.py", line 538, in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+  File "/home/nikita/Desktop/Projects/msme_customerdata/msme-paytrack/backend/venv/lib/python3.8/site-packages/rest_framework/fields.py", line 1870, in to_representation
+    return method(value)
+  File "/home/nikita/Desktop/Projects/inventory management billing system/msme-paytrack/backend/apps/core/serializers.py", line 24, in get_staff_count
+    return obj.staff.count()
+AttributeError: 'Branch' object has no attribute 'staff'

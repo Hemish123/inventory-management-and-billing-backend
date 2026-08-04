@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 10px; color: #222; line-height: 1.4; }
+
+  /* Header — using table layout for xhtml2pdf compatibility */
+  .header-table { width: 100%; border: none; margin-bottom: 4px; }
+  .header-table td { border: none; vertical-align: middle; padding: 0; }
+  .logo { width: 90px; height: 90px; }
+  .company-info { text-align: right; }
+  .company-title { font-size: 12px; font-weight: bold; color: #d62828; }
+  .gst-info { font-size: 9px; margin-top: 2px; }
+  .contact-info { font-size: 9px; margin-top: 2px; line-height: 1.3; text-align: right; }
+  .header-separator { border-bottom: 1px solid #ccc; margin: 4px 0; }
+
+  /* Invoice Title */
+  .invoice-title {
+    font-size: 14px; font-weight: bold; text-align: center;
+    margin: 8px 0 6px; text-transform: uppercase;
+  }
+
+  /* Billing/Shipping Box — table-based layout */
+  .billing-shipping-table { width: 100%; border: 1px solid #ccc; margin-top: 8px; }
+  .billing-shipping-table td { border: none; padding: 8px; vertical-align: top; width: 50%; }
+  .box-header { font-weight: bold; margin-bottom: 4px; margin-top: 6px; }
+  .bold { font-weight: bold; }
+
+  /* Item Table */
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .item-table th {
+    background: #faefef; font-weight: bold; padding: 5px 4px;
+    border: 1px solid #ccc; text-align: center; font-size: 10px;
+  }
+  .item-table td {
+    padding: 4px; border: 1px solid #ccc; text-align: center; font-size: 9px;
+  }
+  .item-table td.desc { text-align: center; }
+  .item-note { font-size: 8px; color: #555; margin-top: 2px; }
+
+  /* HSN Table */
+  .hsn-table th {
+    background: #faefef; font-weight: bold; padding: 5px;
+    border: 1px solid #ccc; text-align: center; font-size: 9px;
+  }
+  .hsn-table td {
+    padding: 5px; border: 1px solid #ccc; text-align: center; font-size: 9px;
+  }
+
+  /* Sections */
+  .section { margin: 10px 0; }
+  .amount-words { font-style: normal; font-size: 10px; margin: 8px 0; }
+
+  /* Terms */
+  .terms { margin-top: 10px; font-size: 9px; line-height: 1.5; }
+
+  /* Signature */
+  .signature {
+    text-align: right; margin-top: 30px; padding-right: 20px;
+  }
+  .signature-line {
+    border-top: 1px solid #222; display: inline-block;
+    width: 180px; margin-top: 40px; padding-top: 4px; text-align: center;
+  }
+
+  /* Total row */
+  .total-row td { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- Header (table-based for xhtml2pdf) -->
+<table class="header-table">
+  <tr>
+    <td style="width: 100px;">
+      {% if logo_path %}
+      <img src="file://{{ logo_path }}" class="logo" />
+      {% else %}
+      <div style="width:90px;height:90px;"></div>
+      {% endif %}
+    </td>
+    <td class="company-info">
+      <div class="company-title">{{ company_name }}</div>
+      <div class="gst-info">GSTIN: {{ company_gst }}</div>
+      <div class="contact-info">
+        {{ company_phone }} | {{ company_email }}<br>
+        {{ company_address }}
+      </div>
+    </td>
+  </tr>
+</table>
+<div class="header-separator"></div>
+
+<!-- Invoice Title -->
+<div class="invoice-title">TAX INVOICE</div>
+
+<!-- Billing / Shipping (table-based for xhtml2pdf) -->
+<table class="billing-shipping-table">
+  <tr>
+    <td>
+      <div><span class="bold">Invoice No:</span> {{ invoice.invoice_number }}</div>
+      <div><span class="bold">Invoice Date:</span> {{ invoice.billing_date }}</div>
+      <div class="box-header">Bill To:</div>
+      <div style="margin-top:4px">
+        <div class="bold">Customer: {{ customer.name }}</div>
+        <div>{{ invoice.billing_to|linebreaksbr }}</div>
+        <div><span class="bold">GSTIN:</span> {{ customer.gst_number|default:"N/A" }}</div>
+        <div><span class="bold">Contact Person:</span> {{ customer.contact_person_1|default:"N/A" }}</div>
+        <div><span class="bold">Contact Number:</span> {{ customer.contact_number|default:"N/A" }}</div>
+      </div>
+    </td>
+    <td style="padding-left: 40px;">
+      <div><span class="bold">Order Date:</span> {{ invoice.order_date }}</div>
+      <div><span class="bold">Order Reference:</span> {{ invoice.order_reference|default:"N/A" }}</div>
+      <div class="box-header">Ship To:</div>
+      <div style="margin-top:4px">
+        {{ invoice.shipping_to|default:invoice.billing_to|linebreaksbr }}
+      </div>
+      {% if invoice.note %}
+      <div style="margin-top:6px"><span class="bold">Note:</span> {{ invoice.note }}</div>
+      {% endif %}
+    </td>
+  </tr>
+</table>
+
+<!-- Items Table -->
+<table class="item-table">
+  <thead>
+    <tr>
+      <th style="width:5%">Sr.</th>
+      <th style="width:26%">Description</th>
+      <th style="width:14%">HSN</th>
+      <th style="width:6%">Qty</th>
+      <th style="width:8%">Unit</th>
+      <th style="width:13%">Unit Price</th>
+      <th style="width:6%">Tax</th>
+      <th style="width:12%">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td class="desc">
+        {{ item.description }}
+        {% if item.note_for_product %}<div class="item-note">({{ item.note_for_product }})</div>{% endif %}
+      </td>
+      <td>{{ item.hsn_code }}</td>
+      <td>{{ item.quantity }}</td>
+      <td>{{ item.unit }}</td>
+      <td>{{ item.unit_price|floatformat:2 }}</td>
+      <td>{{ item.tax_percentage }}%</td>
+      <td>{{ item.amount|floatformat:2 }}</td>
+    </tr>
+    {% endfor %}
+    <!-- Total Row -->
+    <tr class="total-row">
+      <td></td>
+      <td>Total:</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>{{ invoice.grand_total|floatformat:2 }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Amount in Words -->
+<div class="amount-words">
+  <span class="bold">Total Amount (in words):</span> INR {{ amount_in_words }} only
+</div>
+
+<!-- HSN-wise Tax Breakdown -->
+<div class="section">
+  <div class="bold" style="margin-bottom:4px">HSN-wise Tax Breakdown:</div>
+  <table class="hsn-table">
+    <thead>
+      <tr>
+        <th style="width:14%">HSN/SAC</th>
+        <th style="width:16%">Taxable</th>
+        <th style="width:10%">CGST %</th>
+        <th style="width:14%">CGST Amt</th>
+        <th style="width:10%">SGST %</th>
+        <th style="width:14%">SGST Amt</th>
+        <th style="width:14%">Total Tax</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for hsn in hsn_summary %}
+      <tr>
+        <td>{{ hsn.code }}</td>
+        <td>{{ hsn.taxable|floatformat:2 }}</td>
+        <td>{{ hsn.cgst_pct|floatformat:1 }}%</td>
+        <td>{{ hsn.cgst_amt|floatformat:2 }}</td>
+        <td>{{ hsn.sgst_pct|floatformat:1 }}%</td>
+        <td>{{ hsn.sgst_amt|floatformat:2 }}</td>
+        <td>{{ hsn.total_tax|floatformat:2 }}</td>
+      </tr>
+      {% endfor %}
+      <!-- HSN Total Row -->
+      <tr class="total-row">
+        <td>Total</td>
+        <td>{{ hsn_total_taxable|floatformat:2 }}</td>
+        <td></td>
+        <td>{{ hsn_total_cgst|floatformat:2 }}</td>
+        <td></td>
+        <td>{{ hsn_total_sgst|floatformat:2 }}</td>
+        <td>{{ hsn_total_tax|floatformat:2 }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Tax Amount in Words -->
+<div class="amount-words">
+  <span class="bold">Tax Amount (in words):</span> INR {{ tax_in_words }} only
+</div>
+
+<!-- Terms & Conditions -->
+<div class="terms">
+  <div class="bold">Terms &amp; Conditions</div>
+  <div>Payment Terms: {{ invoice.payment_terms|default:"_______________________________" }}</div>
+  <div>Bank A/c: Nyra Enterprise</div>
+  <div>Kotak Mahindra Bank</div>
+  <div>A/c No.: 6450832888</div>
+  <div>IFSC: KKBK0002573 (Vastrapur Branch)</div>
+  <div style="margin-top:4px">
+    <span class="bold">Declaration:</span> This invoice reflects the actual price of goods sold. All particulars are true.
+  </div>
+</div>
+
+<!-- Signature -->
+<div class="signature">
+  <div class="signature-line">Authorised Signatory</div>
+</div>
+
+</body>
+</html>
