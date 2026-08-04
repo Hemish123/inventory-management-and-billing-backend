@@ -34,3 +34,9 @@ class CustomUser(AbstractUser):
         if self.first_name or self.last_name:
             return f"{self.first_name} {self.last_name} ({self.email})"
         return self.email
+
+    @property
+    def role_name(self):
+        if self.role:
+            return self.role.name.upper()
+        return ''

@@ -54,6 +54,8 @@ class DashboardStatsView(APIView):
         month_start = today.replace(day=1)
 
         bills_qs = Bill.objects.filter(company=request.user.company, status='COMPLETED')
+        if request.user.role_name == 'EMPLOYEE':
+            bills_qs = bills_qs.filter(cashier=request.user)
         if branch_id:
             bills_qs = bills_qs.filter(branch_id=branch_id)
 
@@ -74,10 +76,15 @@ class DashboardStatsView(APIView):
         low_stock_count = sum(
             1 for bs in stock_qs if bs.quantity < bs.product.minimum_stock_level
         )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=request.user)
 
-        pending_purchases = Purchase.objects.filter(
-            company=request.user.company, status__in=['DRAFT', 'ORDERED', 'PARTIAL']
-        ).count()
+        pending_purchases_qs = Purchase.objects.filter(company=request.user.company, status__in=['DRAFT', 'ORDERED', 'PARTIAL'])
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(created_by=request.user)
+        if request.user.role_name == 'EMPLOYEE':
+            pending_purchases_qs = pending_purchases_qs.filter(created_by=request.user)
+        pending_purchases = pending_purchases_qs.count()
 
         data = {
             'today_revenue': float(today_revenue),
@@ -108,6 +115,8 @@ class SalesReportView(APIView):
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
         )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -161,7 +170,9 @@ class SalesTrendView(APIView):
 
         daily = qs.annotate(day=TruncDate('billing_date')).values('day').annotate(
             total=Sum('grand_total'), count=Count('id')
-        ).order_by('day')
+        )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=request.user).order_by('day')
 
         data = [{'date': d['day'].isoformat(), 'revenue': float(d['total'] or 0), 'bills': d['count']} for d in daily]
         return api_response(data=data)
@@ -178,6 +189,8 @@ class PurchaseReportView(APIView):
         branch_id = request.query_params.get('branch')
 
         qs = Purchase.objects.filter(company=request.user.company, purchase_date__gte=start_date, purchase_date__lte=end_date)
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(created_by=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -256,6 +269,8 @@ class TopProductsView(APIView):
             bill__billing_date__date__gte=start_date,
             bill__billing_date__date__lte=end_date,
         )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(bill__cashier=request.user)
         if branch_id:
             qs = qs.filter(bill__branch_id=branch_id)
 
@@ -339,6 +354,8 @@ class BranchSalesReportView(APIView):
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
         )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=request.user)
 
         branch_data = qs.values('branch__name', 'branch__code').annotate(
             total_revenue=Sum('grand_total'),
@@ -364,6 +381,8 @@ class SupplierPurchaseReportView(APIView):
         start_date, end_date = _parse_dates(request)
 
         qs = Purchase.objects.filter(company=request.user.company, purchase_date__gte=start_date, purchase_date__lte=end_date)
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(created_by=request.user)
 
         supplier_data = qs.values('supplier__name').annotate(
             total_amount=Sum('total_amount'),
@@ -393,6 +412,8 @@ class CustomerPurchaseReportView(APIView):
             billing_date__date__lte=end_date,
             customer__isnull=False,
         )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=request.user)
 
         customer_data = qs.values('customer__name', 'customer__phone').annotate(
             total_amount=Sum('grand_total'),
@@ -425,6 +446,8 @@ class ProfitReportView(APIView):
             bill__billing_date__date__gte=start_date,
             bill__billing_date__date__lte=end_date,
         )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(bill__cashier=request.user)
         if branch_id:
             qs = qs.filter(bill__branch_id=branch_id)
 

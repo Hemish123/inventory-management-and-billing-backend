@@ -70,18 +70,20 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    role_name = serializers.CharField(read_only=True, default='')
+
     class Meta:
         model = User
         fields = ['id', 'email', 'username', 'first_name', 'last_name',
                   'phone', 'department', 'designation', 'employee_id',
-                  'assigned_branch', 'assigned_warehouse', 'role',
+                  'assigned_branch', 'assigned_warehouse', 'role', 'role_name',
                   'profile_photo', 'must_change_password', 'company',
                   'created_at']
         read_only_fields = ['id', 'email', 'created_at']
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
-    role_name = serializers.CharField(source='role.name', read_only=True, default='')
+    role_name = serializers.CharField(read_only=True, default='')
 
     class Meta:
         model = User

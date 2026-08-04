@@ -34,6 +34,10 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
+            
+        if self.request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=self.request.user)
+            
         return qs
 
     def list(self, request, *args, **kwargs):
