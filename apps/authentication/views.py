@@ -29,13 +29,15 @@ class RegisterView(APIView):
                     company_logo = request.FILES.get('company_logo')
                     company = Company.objects.create(
                         name=company_name,
-                        gstin=request.data.get('company_gst', ''),
+                        gst_number=request.data.get('company_gst', ''),
                         email=request.data.get('company_email', ''),
-                        street_address=request.data.get('company_street', ''),
+                        address=request.data.get('company_street', ''),
                         city=request.data.get('company_city', ''),
                         state=request.data.get('company_state', ''),
-                        pin_code=request.data.get('company_pin', ''),
-                        logo=company_logo
+                        pincode=request.data.get('company_pin', ''),
+                        logo=company_logo,
+                        owner_name=f"{user.first_name} {user.last_name}".strip() or user.username,
+                        phone=user.phone or ''
                     )
                     user.company = company
                     user.save()
