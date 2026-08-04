@@ -230,7 +230,7 @@ SIMPLE_JWT = {
 
 # CORS
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net']
+CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net']
 CORS_ALLOW_CREDENTIALS = True
 
 # Azure OpenAI — removed during RetailTrack refactor
@@ -326,6 +326,7 @@ else:
 CSRF_TRUSTED_ORIGINS = [
     "https://msmebackendjms-gcgbh3f4dndea6dz.centralindia-01.azurewebsites.net",
     "https://inventorymanagementbilling-gpdah6c9gug3a8au.centralindia-01.azurewebsites.net",
+    "https://gray-sea-0ec486900.7.azurestaticapps.net",
 ]
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
