@@ -148,6 +148,8 @@ class CustomTokenRefreshView(TokenRefreshView):
 
 
 from rest_framework import viewsets
+from django.core.mail import send_mail
+from django.conf import settings
 from apps.core.mixins import TenantMixin
 from .serializers import EmployeeSerializer
 
@@ -204,6 +206,28 @@ class EmployeeViewSet(TenantMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = serializer.save(company=self.request.user.company, must_change_password=True)
-        user.set_password('Password123!') # default password for newly created employees
+        password = 'Password123!'
+        user.set_password(password) # default password for newly created employees
         user.save()
+
+        # Send credentials via email
+        try:
+            subject = 'Your Employee Account Credentials'
+            message = (
+                f"Hello {user.first_name or user.username},\n\n"
+                f"An employee account has been created for you at {user.company.name if user.company else 'our company'}.\n\n"
+                f"Here are your login credentials:\n"
+                f"Email: {user.email}\n"
+                f"Password: {password}\n\n"
+                f"Please change your password after logging in."
+            )
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=True,
+            )
+        except Exception:
+            pass
 
