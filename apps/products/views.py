@@ -13,6 +13,11 @@ from .serializers import (
     ProductSerializer, ProductListSerializer, ProductDropdownSerializer,
     BranchStockSerializer,
 )
+import io
+from django.http import HttpResponse
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.graphics.barcode import createBarcodeDrawing
 
 
 class CategoryViewSet(TenantMixin, viewsets.ModelViewSet):
@@ -196,3 +201,80 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
             return api_response(data=serializer.data)
         except Product.DoesNotExist:
             return api_error(message='Product not found', status_code=404)
+
+    @action(detail=False, methods=['post'], url_path='print-barcodes')
+    def print_barcodes(self, request):
+        items = request.data.get('items', [])
+        if not items:
+            return api_error(message='No items provided for barcode printing.')
+
+        # Extract product ids and quantities
+        product_qtys = {}
+        for item in items:
+            product_id = item.get('product_id') or item.get('id')
+            qty = int(item.get('quantity', 1))
+            if product_id:
+                product_qtys[product_id] = product_qtys.get(product_id, 0) + qty
+
+        products = self.get_queryset().filter(id__in=product_qtys.keys())
+        
+        # Flatten items based on quantity
+        print_items = []
+        for p in products:
+            qty = product_qtys.get(p.id, 0)
+            for _ in range(qty):
+                print_items.append(p)
+
+        if not print_items:
+            return api_error(message='No valid products found.')
+
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        
+        cols = 3
+        rows = 7
+        labels_per_page = cols * rows
+        
+        label_w = width / cols
+        label_h = height / rows
+        
+        for i, p in enumerate(print_items):
+            if i > 0 and i % labels_per_page == 0:
+                c.showPage()
+                
+            pos_in_page = i % labels_per_page
+            r = pos_in_page // cols
+            col = pos_in_page % cols
+            
+            x = col * label_w
+            y = height - ((r + 1) * label_h)
+            
+            center_x = x + (label_w / 2.0)
+            
+            # Draw Product Name
+            c.setFont("Helvetica", 10)
+            name = (p.name[:30] + '..') if len(p.name) > 30 else p.name
+            c.drawCentredString(center_x, y + label_h - 20, name)
+            
+            # Draw Barcode
+            try:
+                barcode_value = p.barcode if p.barcode else p.sku
+                if barcode_value:
+                    barcode = createBarcodeDrawing('Code128', value=barcode_value, width=label_w - 40, height=label_h - 60, humanReadable=True)
+                    b_x = x + (label_w - barcode.width) / 2
+                    b_y = y + 25
+                    barcode.drawOn(c, b_x, b_y)
+            except Exception:
+                pass
+            
+            # Draw Price
+            c.setFont("Helvetica-Bold", 12)
+            c.drawCentredString(center_x, y + 10, f"₹{p.selling_price}")
+            
+        c.save()
+        buffer.seek(0)
+        
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="barcodes.pdf"'
+        return response
