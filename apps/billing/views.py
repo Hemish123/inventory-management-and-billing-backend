@@ -97,8 +97,9 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 bill_number = BillSequence.next_bill_number(branch)
 
                 # Calculate totals from items
-                subtotal = sum(item['line_total'] for item in items_data)
+                # line_total already includes tax, so subtotal must exclude tax
                 tax_total = sum(item.get('tax_amount', Decimal('0')) for item in items_data)
+                subtotal = sum(item['line_total'] for item in items_data) - tax_total
 
                 # Overall discount
                 discount_type = data.get('discount_type', 'NONE')
