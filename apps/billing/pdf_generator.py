@@ -214,20 +214,6 @@ def generate_bill_pdf(bill):
         elements.append(Paragraph("-" * 42, center_normal))
         elements.append(Paragraph(f"Paid by: {bill.payment_method}", center_bold))
         
-    # 6. QR Code
-    elements.append(Spacer(1, 5*mm))
-    qr_data = f"UPI://pay?pa={company_gst}@upi&pn={company_name.replace(' ', '%20')}&am={bill.grand_total}&tr={bill.bill_number}&cu=INR"
-    qr_code = qr.QrCodeWidget(qr_data)
-    bounds = qr_code.getBounds()
-    width = bounds[2] - bounds[0]
-    height = bounds[3] - bounds[1]
-    
-    # Create drawing and center it
-    d = Drawing(40*mm, 40*mm, transform=[40*mm/width,0,0,40*mm/height,0,0])
-    d.add(qr_code)
-    d.hAlign = 'CENTER'
-    elements.append(d)
-    
     # 7. Footer
     elements.append(Spacer(1, 5*mm))
     elements.append(Paragraph("Thank you for shopping with us!", center_bold))
