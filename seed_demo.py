@@ -22,7 +22,7 @@ company, created = Company.objects.get_or_create(
 print(f"Company created: {company}")
 
 # Create User
-email = 'demo@msmepaytrack.com'
+email = 'demo@retailtrack.jmstech.co'
 password = 'demo1234'
 
 try:
