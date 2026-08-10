@@ -7,6 +7,7 @@ from django.db import transaction
 from apps.core.models import Branch, Warehouse
 from apps.products.models import Category, Brand, Supplier, Product, BranchStock
 
+from apps.companies.models import Company
 
 class Command(BaseCommand):
     help = 'Seeds RetailTrack with demo branches, products, and stock data'
@@ -15,11 +16,17 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.MIGRATE_HEADING('Seeding RetailTrack demo data...'))
 
+        # Fetch the demo company created by seed_demo.py
+        company = Company.objects.first()
+        if not company:
+            self.stdout.write(self.style.ERROR('No Company found! Please run `python seed_demo.py` first.'))
+            return
+
         # ── Branches ──
         branches_data = [
-            {'name': 'Main Store', 'code': 'MAIN', 'address': 'MG Road, Pune 411001', 'phone': '020-12345678', 'manager_name': 'Rahul Sharma'},
-            {'name': 'City Center', 'code': 'CC01', 'address': 'FC Road, Pune 411004', 'phone': '020-87654321', 'manager_name': 'Priya Deshmukh'},
-            {'name': 'Warehouse Hub', 'code': 'WH01', 'address': 'MIDC Hinjawadi, Pune', 'phone': '020-55551234', 'manager_name': 'Amit Kulkarni'},
+            {'name': 'Main Store', 'code': 'MAIN', 'address': 'MG Road, Pune 411001', 'phone': '020-12345678', 'manager_name': 'Rahul Sharma', 'company': company},
+            {'name': 'City Center', 'code': 'CC01', 'address': 'FC Road, Pune 411004', 'phone': '020-87654321', 'manager_name': 'Priya Deshmukh', 'company': company},
+            {'name': 'Warehouse Hub', 'code': 'WH01', 'address': 'MIDC Hinjawadi, Pune', 'phone': '020-55551234', 'manager_name': 'Amit Kulkarni', 'company': company},
         ]
         branches = {}
         for bd in branches_data:
@@ -29,7 +36,7 @@ class Command(BaseCommand):
 
         # ── Warehouses ──
         wh, created = Warehouse.objects.get_or_create(
-            code='WH-MAIN', defaults={'name': 'Main Warehouse', 'branch': branches['WH01']}
+            code='WH-MAIN', defaults={'name': 'Main Warehouse', 'branch': branches['WH01'], 'company': company}
         )
         self.stdout.write(f"  {'✓ Created' if created else '  Exists'} warehouse: {wh.name}")
 
@@ -40,7 +47,7 @@ class Command(BaseCommand):
         ]
         categories = {}
         for name in categories_data:
-            c, created = Category.objects.get_or_create(name=name)
+            c, created = Category.objects.get_or_create(name=name, company=company)
             categories[name] = c
             self.stdout.write(f"  {'✓ Created' if created else '  Exists'} category: {name}")
 
@@ -49,15 +56,15 @@ class Command(BaseCommand):
                         'Tata', 'Britannia', 'Nestle', 'P&G', 'Godrej']
         brands = {}
         for name in brands_data:
-            b, created = Brand.objects.get_or_create(name=name)
+            b, created = Brand.objects.get_or_create(name=name, company=company)
             brands[name] = b
             self.stdout.write(f"  {'✓ Created' if created else '  Exists'} brand: {name}")
 
         # ── Suppliers ──
         suppliers_data = [
-            {'name': 'Metro Cash & Carry', 'contact_person': 'Rajesh', 'phone': '9876543210', 'email': 'metro@example.com', 'gstin': '27AABCU9603R1ZM'},
-            {'name': 'Reliance Distribution', 'contact_person': 'Sanjay', 'phone': '9123456789', 'email': 'reliance@example.com', 'gstin': '27AABCR1234P1ZN'},
-            {'name': 'DMart Wholesale', 'contact_person': 'Anil', 'phone': '9988776655', 'email': 'dmart@example.com', 'gstin': '27AABCD5678Q1ZO'},
+            {'name': 'Metro Cash & Carry', 'contact_person': 'Rajesh', 'phone': '9876543210', 'email': 'metro@example.com', 'gstin': '27AABCU9603R1ZM', 'company': company},
+            {'name': 'Reliance Distribution', 'contact_person': 'Sanjay', 'phone': '9123456789', 'email': 'reliance@example.com', 'gstin': '27AABCR1234P1ZN', 'company': company},
+            {'name': 'DMart Wholesale', 'contact_person': 'Anil', 'phone': '9988776655', 'email': 'dmart@example.com', 'gstin': '27AABCD5678Q1ZO', 'company': company},
         ]
         suppliers = {}
         for sd in suppliers_data:
@@ -97,6 +104,7 @@ class Command(BaseCommand):
         for pd in products_data:
             p, created = Product.objects.get_or_create(
                 sku=pd['sku'],
+                company=company,
                 defaults={
                     'name': pd['name'],
                     'category': categories[pd['category']],
@@ -123,7 +131,7 @@ class Command(BaseCommand):
             stock_cc = random.randint(0, 80)
 
             bs1, created = BranchStock.objects.get_or_create(
-                product=p, branch=main_branch, warehouse=None,
+                product=p, branch=main_branch, warehouse=None, company=company,
                 defaults={'quantity': stock_main}
             )
             if not created:
@@ -131,7 +139,7 @@ class Command(BaseCommand):
                 bs1.save()
 
             bs2, created = BranchStock.objects.get_or_create(
-                product=p, branch=cc_branch, warehouse=None,
+                product=p, branch=cc_branch, warehouse=None, company=company,
                 defaults={'quantity': stock_cc}
             )
             if not created:

@@ -8,7 +8,7 @@ asn1crypto==1.5.1
 
 brotli==1.2.0
 certifi==2026.4.22
-cffi>=2.0.0
+cffi>=1.15.0
 chardet==5.2.0
 charset-normalizer==3.4.7
 click==8.1.8
