@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     DashboardStatsView, SalesTrendView, SalesReportView,
     PurchaseReportView, InventoryReportView, TopProductsView,
-    LowStockView, DeadStockView, BranchSalesReportView,
+    LowStockView, DeadStockView, BranchSalesReportView, EmployeeSalesReportView,
     SupplierPurchaseReportView, CustomerPurchaseReportView,
     ProfitReportView, StockValuationView,
 )
@@ -17,6 +17,7 @@ urlpatterns = [
     path('low-stock/', LowStockView.as_view(), name='report-low-stock'),
     path('dead-stock/', DeadStockView.as_view(), name='report-dead-stock'),
     path('branch-sales/', BranchSalesReportView.as_view(), name='report-branch-sales'),
+    path('employee-sales/', EmployeeSalesReportView.as_view(), name='report-employee-sales'),
     path('supplier-purchases/', SupplierPurchaseReportView.as_view(), name='report-supplier-purchases'),
     path('customer-purchases/', CustomerPurchaseReportView.as_view(), name='report-customer-purchases'),
     path('profit/', ProfitReportView.as_view(), name='report-profit'),

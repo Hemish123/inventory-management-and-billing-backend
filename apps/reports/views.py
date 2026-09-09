@@ -499,3 +499,45 @@ class StockValuationView(APIView):
             'items': items,
         }
         return api_response(data=data)
+
+# ──────────────────────────────────────────────────────────
+# Employee Sales Report
+# ──────────────────────────────────────────────────────────
+class EmployeeSalesReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        start_date, end_date = _parse_dates(request)
+        branch_id = request.query_params.get('branch')
+
+        qs = Bill.objects.filter(
+            company=request.user.company,
+            status='COMPLETED',
+            billing_date__date__gte=start_date,
+            billing_date__date__lte=end_date,
+        )
+        if request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(cashier=request.user)
+        if branch_id:
+            qs = qs.filter(branch_id=branch_id)
+
+        employee_data = qs.values('cashier__first_name', 'cashier__last_name', 'cashier__username').annotate(
+            total_revenue=Sum('grand_total'),
+            total_bills=Count('id'),
+            avg_bill=Avg('grand_total'),
+        ).order_by('-total_revenue')
+
+        data = []
+        for e in employee_data:
+            first_name = e['cashier__first_name'] or ''
+            last_name = e['cashier__last_name'] or ''
+            name = f"{first_name} {last_name}".strip() or e['cashier__username'] or 'Unknown'
+            
+            data.append({
+                 'employee': name,
+                 'revenue': float(e['total_revenue'] or 0),
+                 'bills': e['total_bills'],
+                 'avg_bill': float(e['avg_bill'] or 0)
+            })
+
+        return api_response(data=data)

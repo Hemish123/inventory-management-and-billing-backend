@@ -20,4 +20,5 @@ class TenantMixin:
         if hasattr(user, 'company') and user.company:
             serializer.save(company=user.company)
         else:
-            serializer.save()
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'detail': 'User is not associated with any company.'})

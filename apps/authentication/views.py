@@ -205,9 +205,10 @@ class EmployeeViewSet(TenantMixin, viewsets.ModelViewSet):
         return api_error(errors=serializer.errors)
 
     def perform_create(self, serializer):
+        from django.utils.crypto import get_random_string
         user = serializer.save(company=self.request.user.company, must_change_password=True)
-        password = 'Password123!'
-        user.set_password(password) # default password for newly created employees
+        password = get_random_string(length=12)
+        user.set_password(password) # random password for newly created employees
         user.save()
 
         # Send credentials via email

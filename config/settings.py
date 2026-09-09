@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 
 DEBUG = False
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'a495-2405-201-2005-1965-f81-98b4-397c-4.ngrok-free.app','msmebackendjms-gcgbh3f4dndea6dz.centralindia-01.azurewebsites.net','inventorymanagementbilling-gpdah6c9gug3a8au.centralindia-01.azurewebsites.net', 'retailtrack.jmstech.co', 'api.retailtrack.jmstech.co']
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [

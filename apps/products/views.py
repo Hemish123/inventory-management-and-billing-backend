@@ -2,6 +2,7 @@ from apps.core.mixins import TenantMixin
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.db.models import Sum
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
@@ -13,11 +14,13 @@ from .serializers import (
     ProductSerializer, ProductListSerializer, ProductDropdownSerializer,
     BranchStockSerializer,
 )
-import io
+import io, os, json, logging
 from django.http import HttpResponse
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.graphics.barcode import createBarcodeDrawing
+
+logger = logging.getLogger(__name__)
 
 
 class CategoryViewSet(TenantMixin, viewsets.ModelViewSet):
@@ -278,3 +281,185 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
         response = HttpResponse(buffer, content_type='application/pdf')
         response['Content-Disposition'] = 'attachment; filename="barcodes.pdf"'
         return response
+
+    @action(detail=False, methods=['post'], url_path='upload-pdf',
+            parser_classes=[MultiPartParser, FormParser])
+    def upload_pdf(self, request):
+        """Extract products from an uploaded PDF using OpenAI GPT-4o-mini."""
+        pdf_file = request.FILES.get('file')
+        if not pdf_file:
+            return api_error(message='No PDF file provided.')
+
+        if not pdf_file.name.lower().endswith('.pdf'):
+            return api_error(message='Only PDF files are accepted.')
+
+        # --- 1. Extract text & images from PDF ---
+        try:
+            import fitz  # PyMuPDF
+            import base64
+            pdf_bytes = pdf_file.read()
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            text_parts = []
+            base64_images = []
+            for page in doc:
+                text = page.get_text()
+                if text.strip():
+                    text_parts.append(text)
+                else:
+                    # Fallback to image for scanned pages
+                    pix = page.get_pixmap(dpi=150)
+                    img_bytes = pix.tobytes("jpeg")
+                    base64_images.append(base64.b64encode(img_bytes).decode('utf-8'))
+            doc.close()
+            pdf_text = "\n".join(text_parts).strip()
+        except Exception as e:
+            logger.exception("PDF extraction failed")
+            return api_error(message=f'Failed to read PDF: {str(e)}')
+
+        if not pdf_text and not base64_images:
+            return api_error(message='No readable text or images found in the PDF.')
+
+        # --- 2. Send to OpenAI GPT-4o-mini ---
+        # from openai import OpenAI
+        # api_key = os.environ.get('OPENAI_API_KEY', '')
+        # if not api_key:
+        #     return api_error(message='OpenAI API key is not configured on the server.')
+        
+        from openai import AzureOpenAI
+        azure_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT', 'https://jivihireopenai.openai.azure.com')
+        azure_api_key = os.environ.get('AZURE_OPENAI_KEY', '')
+        azure_deployment = os.environ.get('AZURE_OPENAI_DEPLOYMENT', 'gpt-4o-mini')
+        azure_api_version = os.environ.get('AZURE_OPENAI_API_VERSION', '2024-05-01-preview')
+
+        if not azure_api_key:
+            return api_error(message='Azure OpenAI API key is not configured on the server.')
+
+        prompt_text = (
+            "You are a product data extractor. Analyze the following text/images extracted from a PDF "
+            "and return a JSON array of product objects. Each product object should have these fields "
+            "(use empty string or 0 for missing values):\n"
+            "- name (string, required)\n"
+            "- sku (string)\n"
+            "- description (string)\n"
+            "- category (string)\n"
+            "- brand (string)\n"
+            "- unit (string, one of: Nos, Kg, Ltr, Mtr, Box, Pcs, Set, Pair, Dozen, Other)\n"
+            "- cost_price (number)\n"
+            "- selling_price (number)\n"
+            "- hsn_code (string)\n"
+            "- tax_percentage (number, typically 0, 5, 12, 18, or 28)\n"
+            "\nReturn ONLY a valid JSON array, no markdown, no explanation.\n"
+        )
+        
+        user_content = [{"type": "text", "text": prompt_text}]
+        if pdf_text:
+            user_content[0]["text"] += f"\n\nPDF TEXT:\n{pdf_text[:15000]}"
+            
+        for b64_img in base64_images:
+            user_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+            })
+
+        try:
+            # client = OpenAI(api_key=api_key)
+            # completion = client.chat.completions.create(
+            #     model="gpt-4o-mini",
+            #     messages=[
+            #         {"role": "system", "content": "You extract structured product data from text and images. Always respond with valid JSON only."},
+            #         {"role": "user", "content": user_content}
+            #     ],
+            #     temperature=0.1,
+            #     max_tokens=4096,
+            # )
+            client = AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                api_key=azure_api_key,
+                api_version=azure_api_version
+            )
+            completion = client.chat.completions.create(
+                model=azure_deployment,
+                messages=[
+                    {"role": "system", "content": "You extract structured product data from text and images. Always respond with valid JSON only."},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.1,
+                max_tokens=4096,
+            )
+            ai_text = completion.choices[0].message.content.strip()
+            # Strip markdown code fences if present
+            if ai_text.startswith("```"):
+                ai_text = ai_text.split("\n", 1)[1] if "\n" in ai_text else ai_text[3:]
+                if ai_text.endswith("```"):
+                    ai_text = ai_text[:-3]
+                ai_text = ai_text.strip()
+            products_data = json.loads(ai_text)
+        except json.JSONDecodeError:
+            logger.error("OpenAI returned non-JSON: %s", ai_text[:500])
+            return api_error(message='AI returned invalid data. Please try a cleaner PDF.')
+        except Exception as e:
+            logger.exception("OpenAI API call failed")
+            return api_error(message=f'AI processing failed: {str(e)}')
+
+        if not isinstance(products_data, list) or len(products_data) == 0:
+            return api_error(message='No products could be extracted from the PDF.')
+
+        # --- 3. Bulk-create products (duplicates allowed) ---
+        company = request.user.company
+        created = []
+        for item in products_data:
+            try:
+                cat_name = str(item.get('category', '')).strip()
+                cat = None
+                if cat_name:
+                    cat, _ = Category.objects.get_or_create(
+                        name=cat_name, company=company, defaults={'description': ''})
+
+                brand_name = str(item.get('brand', '')).strip()
+                brand = None
+                if brand_name:
+                    brand, _ = Brand.objects.get_or_create(
+                        name=brand_name, company=company, defaults={'description': ''})
+
+                product = Product(
+                    company=company,
+                    name=str(item.get('name', 'Unnamed Product')).strip(),
+                    sku=str(item.get('sku', '')).strip(),
+                    description=str(item.get('description', '')).strip(),
+                    category=cat,
+                    brand=brand,
+                    unit=str(item.get('unit', 'Nos')).strip() or 'Nos',
+                    cost_price=float(item.get('cost_price', 0) or 0),
+                    selling_price=float(item.get('selling_price', 0) or 0),
+                    hsn_code=str(item.get('hsn_code', '')).strip(),
+                    tax_percentage=int(item.get('tax_percentage', 18) or 18),
+                )
+                product.save()  # auto-generates unique barcode
+                created.append({
+                    'id': product.id,
+                    'name': product.name,
+                    'sku': product.sku,
+                    'barcode': product.barcode,
+                    'description': product.description,
+                    'category': product.category_id,
+                    'category_name': cat.name if cat else '',
+                    'brand': product.brand_id,
+                    'brand_name': brand.name if brand else '',
+                    'unit': product.unit,
+                    'cost_price': str(product.cost_price),
+                    'selling_price': str(product.selling_price),
+                    'hsn_code': product.hsn_code,
+                    'tax_percentage': product.tax_percentage,
+                })
+            except Exception as e:
+                logger.warning("Failed to create product from PDF item: %s — %s", item, e)
+                continue
+
+        if not created:
+            return api_error(message='Failed to create any products from the PDF.')
+
+        return api_response(
+            data={'products': created, 'count': len(created)},
+            message=f'{len(created)} product(s) created from PDF.',
+            status_code=status.HTTP_201_CREATED,
+        )

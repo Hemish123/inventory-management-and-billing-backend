@@ -1,5 +1,6 @@
 from rest_framework.views import exception_handler
 from django.db.models import ProtectedError
+from django.db import IntegrityError
 from rest_framework import status
 from utils.response import api_error
 
@@ -13,5 +14,10 @@ def custom_exception_handler(exc, context):
         # We handle this manually and return a custom JSON payload formatted correctly
         error_msg = 'Cannot delete this record because it is currently in use by other related records.'
         return api_error(message=error_msg, status_code=status.HTTP_400_BAD_REQUEST)
+
+    if isinstance(exc, IntegrityError):
+        if 'barcode' in str(exc).lower():
+            return api_error(message="A product with this barcode already exists.", status_code=status.HTTP_400_BAD_REQUEST)
+        return api_error(message="A database integrity error occurred (e.g., duplicate entry or missing required field).", status_code=status.HTTP_400_BAD_REQUEST)
 
     return response
