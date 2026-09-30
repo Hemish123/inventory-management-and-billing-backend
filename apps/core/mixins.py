@@ -24,9 +24,5 @@ class TenantMixin:
             raise ValidationError({'detail': 'User is not associated with any company.'})
 
     def perform_destroy(self, instance):
-        """Soft delete if the model supports it, otherwise hard delete."""
-        if hasattr(instance, 'is_active'):
-            instance.is_active = False
-            instance.save()
-        else:
-            instance.delete()
+        """Hard delete the record from the database."""
+        instance.delete()

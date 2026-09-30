@@ -207,9 +207,18 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='print-barcodes')
     def print_barcodes(self, request):
+        """Generate barcode PDF for NJ MPL sticker sheets (l40, l16, l110, l48)."""
         items = request.data.get('items', [])
         if not items:
             return api_error(message='No items provided for barcode printing.')
+
+        # Determine sticker-sheet format (default l48)
+        size_key = request.data.get('size', 'l48')
+
+        # Get company name for marketing
+        company_name = ''
+        if hasattr(request.user, 'company') and request.user.company:
+            company_name = request.user.company.name
 
         # Extract product ids and quantities
         product_qtys = {}
@@ -220,7 +229,7 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
                 product_qtys[product_id] = product_qtys.get(product_id, 0) + qty
 
         products = self.get_queryset().filter(id__in=product_qtys.keys())
-        
+
         # Flatten items based on quantity
         print_items = []
         for p in products:
@@ -231,53 +240,276 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
         if not print_items:
             return api_error(message='No valid products found.')
 
+        from reportlab.lib.units import mm
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        # ── NJ MPL sticker-sheet configurations (all values in mm) ──
+        SIZE_CONFIGS = {
+            'l48': {
+                'cols': 4, 'rows': 12, 'labelW': 48, 'labelH': 24, 'gapX': 2, 'gapY': 0.25,
+                'marginTop': 1.125, 'marginLeft': 8,
+                'padTop': 1, 'padBottom': 1, 'padLeft': 1.5, 'padRight': 1.5,
+                'barcodeW': 38, 'barcodeH': 9,
+                'companyFont': 6, 'companyBoxH': 3,
+                'digitsFont': 6.5, 'digitsBoxH': 3,
+                'nameFont': 7, 'priceFont': 9, 'bottomRowH': 4.5,
+                'showCompany': True, 'showName': True, 'showPrice': True,
+                'layout': 'vertical',
+            },
+            'l16': {
+                'cols': 2, 'rows': 8, 'labelW': 99, 'labelH': 34, 'gapX': 2, 'gapY': 1.28,
+                'marginTop': 2.52, 'marginLeft': 4,
+                'padTop': 2, 'padBottom': 2, 'padLeft': 2, 'padRight': 2,
+                'leftColW': 50, 'rightColW': 43,
+                'barcodeW': 46, 'barcodeH': 15,
+                'digitsFont': 8, 'digitsBoxH': 4,
+                'companyFont': 8, 'companyBoxH': 4,
+                'nameFont': 10, 'nameBoxH': 8,
+                'priceFont': 16, 'priceBoxH': 8,
+                'showCompany': True, 'showName': True, 'showPrice': True,
+                'layout': 'horizontal',
+            },
+            'l40': {
+                'cols': 10, 'rows': 4, 'labelW': 18, 'labelH': 73, 'gapX': 1, 'gapY': 1,
+                'marginTop': 1.5, 'marginLeft': 1.5,
+                'padTop': 1.5, 'padBottom': 1.5, 'padLeft': 1.5, 'padRight': 1.5,
+                'barcodeW': 55, 'barcodeH': 6,
+                'companyFont': 5.5, 'companyBoxH': 2.4,
+                'digitsFont': 6, 'digitsBoxH': 2.4,
+                'nameFont': 7, 'priceFont': 9, 'bottomRowH': 3.6,
+                'showCompany': True, 'showName': True, 'showPrice': True,
+                'layout': 'rotated',
+            },
+            'l110': {
+                'cols': 5, 'rows': 22, 'labelW': 35, 'labelH': 10, 'gapX': 2, 'gapY': 2.5,
+                'marginTop': 12.25, 'marginLeft': 7.5,
+                'padTop': 0.5, 'padBottom': 0.5, 'padLeft': 0.5, 'padRight': 0.5,
+                'barcodeW': 24, 'barcodeH': 4.5,
+                'digitsFont': 5, 'digitsBoxH': 2,
+                'nameFont': 5, 'nameBoxH': 2.2,
+                'priceFont': 8, 'priceColW': 10,
+                'showCompany': False, 'showName': True, 'showPrice': True,
+                'layout': 'tiny',
+            },
+        }
+
+        cfg = SIZE_CONFIGS.get(size_key, SIZE_CONFIGS['l48'])
+        cols = cfg['cols']
+        rows = cfg['rows']
+        label_w = cfg['labelW'] * mm
+        label_h = cfg['labelH'] * mm
+        gap_x = cfg['gapX'] * mm
+        gap_y = cfg['gapY'] * mm
+        margin_top = cfg['marginTop'] * mm
+        margin_left = cfg['marginLeft'] * mm
+        labels_per_page = cols * rows
+        layout = cfg['layout']
+
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
-        
-        cols = 3
-        rows = 7
-        labels_per_page = cols * rows
-        
-        label_w = width / cols
-        label_h = height / rows
-        
+        page_w, page_h = A4
+
+        def truncate_text(text, font_name, font_size, max_width):
+            if not text: return ""
+            text = str(text)
+            if stringWidth(text, font_name, font_size) <= max_width:
+                return text
+            while len(text) > 0 and stringWidth(text + "..", font_name, font_size) > max_width:
+                text = text[:-1]
+            return text + ".."
+
+        # Helper to draw barcode properly scaled and centered in its bounding box
+        def draw_barcode(x, y, w_mm, h_mm, value):
+            if not value: return
+            fmt = 'Code128Auto' if value.isdigit() and len(value) % 2 == 0 else 'Code128'
+            from reportlab.graphics.barcode.code128 import Code128Auto, Code128
+            try:
+                bc_class = Code128Auto if fmt == 'Code128Auto' else Code128
+                bc = bc_class(value=value, barHeight=h_mm * mm, humanReadable=False)
+                natural_width = bc.width
+                scale = (w_mm * mm) / natural_width
+                bc.barWidth = bc.barWidth * scale
+                bc.drawOn(c, x, y)
+            except Exception as e:
+                logger.error(f"Failed to generate barcode: {e}")
+
         for i, p in enumerate(print_items):
             if i > 0 and i % labels_per_page == 0:
                 c.showPage()
+
+            pos = i % labels_per_page
+            r = pos // cols
+            col_idx = pos % cols
+
+            x = margin_left + col_idx * (label_w + gap_x)
+            y = page_h - margin_top - (r + 1) * label_h - r * gap_y
+            
+            barcode_value = p.barcode if p.barcode else p.sku
+
+            if layout == 'vertical': # l48
+                cx = x + label_w / 2.0
+                curr_y = y + label_h - cfg['padTop'] * mm
                 
-            pos_in_page = i % labels_per_page
-            r = pos_in_page // cols
-            col = pos_in_page % cols
-            
-            x = col * label_w
-            y = height - ((r + 1) * label_h)
-            
-            center_x = x + (label_w / 2.0)
-            
-            # Draw Product Name
-            c.setFont("Helvetica", 10)
-            name = (p.name[:30] + '..') if len(p.name) > 30 else p.name
-            c.drawCentredString(center_x, y + label_h - 20, name)
-            
-            # Draw Barcode
-            try:
-                barcode_value = p.barcode if p.barcode else p.sku
+                # Company
+                if cfg['showCompany'] and company_name:
+                    c.setFont("Helvetica-Bold", cfg['companyFont'])
+                    co = truncate_text(company_name.upper(), "Helvetica-Bold", cfg['companyFont'], (cfg['labelW'] - cfg['padLeft'] - cfg['padRight']) * mm)
+                    curr_y -= cfg['companyBoxH'] * mm
+                    c.drawCentredString(cx, curr_y + (cfg['companyBoxH']*mm - cfg['companyFont'])/2.0, co)
+                
+                # Barcode
+                curr_y -= cfg['barcodeH'] * mm
+                bc_x = x + (cfg['labelW'] - cfg['barcodeW']) * mm / 2.0
+                draw_barcode(bc_x, curr_y, cfg['barcodeW'], cfg['barcodeH'], barcode_value)
+                
+                # Digits
+                curr_y -= cfg['digitsBoxH'] * mm
                 if barcode_value:
-                    barcode = createBarcodeDrawing('Code128', value=barcode_value, width=label_w - 40, height=label_h - 60, humanReadable=True)
-                    b_x = x + (label_w - barcode.width) / 2
-                    b_y = y + 25
-                    barcode.drawOn(c, b_x, b_y)
-            except Exception:
-                pass
+                    c.setFont("Helvetica", cfg['digitsFont'])
+                    c.drawCentredString(cx, curr_y + (cfg['digitsBoxH']*mm - cfg['digitsFont'])/2.0, barcode_value)
+                
+                # Name & Price
+                curr_y -= cfg['bottomRowH'] * mm
+                usable_w = (cfg['labelW'] - cfg['padLeft'] - cfg['padRight']) * mm
+                price_str = f"₹{p.selling_price}"
+                c.setFont("Helvetica-Bold", cfg['priceFont'])
+                price_w = stringWidth(price_str, "Helvetica-Bold", cfg['priceFont'])
+                
+                if cfg['showName']:
+                    name_max_w = usable_w - price_w - 2 * mm
+                    c.setFont("Helvetica-Bold", cfg['nameFont'])
+                    name_str = truncate_text(p.name, "Helvetica-Bold", cfg['nameFont'], name_max_w)
+                    c.drawString(x + cfg['padLeft'] * mm, curr_y + (cfg['bottomRowH']*mm - cfg['nameFont'])/2.0, name_str)
+                
+                if cfg['showPrice']:
+                    c.setFont("Helvetica-Bold", cfg['priceFont'])
+                    c.drawString(x + cfg['labelW']*mm - cfg['padRight']*mm - price_w, curr_y + (cfg['bottomRowH']*mm - cfg['priceFont'])/2.0, price_str)
             
-            # Draw Price
-            c.setFont("Helvetica-Bold", 12)
-            c.drawCentredString(center_x, y + 10, f"₹{p.selling_price}")
+            elif layout == 'horizontal': # l16
+                # Left Column (Barcode)
+                left_x = x + cfg['padLeft'] * mm
+                cy_left = y + label_h / 2.0
+                
+                bc_x = left_x + (cfg['leftColW'] - cfg['barcodeW']) * mm / 2.0
+                bc_y = cy_left - (cfg['barcodeH'] + cfg['digitsBoxH']) * mm / 2.0 + cfg['digitsBoxH'] * mm
+                draw_barcode(bc_x, bc_y, cfg['barcodeW'], cfg['barcodeH'], barcode_value)
+                
+                if barcode_value:
+                    c.setFont("Helvetica", cfg['digitsFont'])
+                    c.drawCentredString(left_x + cfg['leftColW'] * mm / 2.0, bc_y - cfg['digitsBoxH'] * mm + (cfg['digitsBoxH']*mm - cfg['digitsFont'])/2.0, barcode_value)
+                
+                # Right Column (Text)
+                right_x = x + cfg['padLeft'] * mm + cfg['leftColW'] * mm + 2 * mm
+                right_w = (cfg['rightColW'] - 2) * mm
+                curr_y = y + label_h - cfg['padTop'] * mm - 2 * mm # extra padding
+                
+                if cfg['showCompany'] and company_name:
+                    curr_y -= cfg['companyBoxH'] * mm
+                    c.setFont("Helvetica-Bold", cfg['companyFont'])
+                    co = truncate_text(company_name.upper(), "Helvetica-Bold", cfg['companyFont'], right_w)
+                    c.drawString(right_x, curr_y + (cfg['companyBoxH']*mm - cfg['companyFont'])/2.0, co)
+                
+                if cfg['showName']:
+                    curr_y -= cfg['nameBoxH'] * mm
+                    c.setFont("Helvetica-Bold", cfg['nameFont'])
+                    name_str = truncate_text(p.name, "Helvetica-Bold", cfg['nameFont'], right_w * 2) # Allow 2 lines approx
+                    # Simplistic 2 line split
+                    words = name_str.split()
+                    line1 = ""
+                    line2 = ""
+                    for w in words:
+                        if stringWidth(line1 + " " + w, "Helvetica-Bold", cfg['nameFont']) < right_w:
+                            line1 += " " + w if line1 else w
+                        else:
+                            line2 += " " + w if line2 else w
+                    if stringWidth(line2, "Helvetica-Bold", cfg['nameFont']) > right_w:
+                        line2 = truncate_text(line2, "Helvetica-Bold", cfg['nameFont'], right_w)
+                    
+                    c.drawString(right_x, curr_y + cfg['nameBoxH'] * mm / 2.0, line1)
+                    if line2:
+                        c.drawString(right_x, curr_y, line2)
+                
+                if cfg['showPrice']:
+                    curr_y -= cfg['priceBoxH'] * mm
+                    c.setFont("Helvetica-Bold", cfg['priceFont'])
+                    c.drawString(right_x, curr_y + (cfg['priceBoxH']*mm - cfg['priceFont'])/2.0, f"₹{p.selling_price}")
             
+            elif layout == 'tiny': # l110
+                usable_w = (cfg['labelW'] - cfg['padLeft'] - cfg['padRight']) * mm
+                curr_y = y + label_h - cfg['padTop'] * mm
+                
+                if cfg['showName']:
+                    curr_y -= cfg['nameBoxH'] * mm
+                    c.setFont("Helvetica-Bold", cfg['nameFont'])
+                    name_str = truncate_text(p.name, "Helvetica-Bold", cfg['nameFont'], usable_w)
+                    c.drawString(x + cfg['padLeft'] * mm, curr_y + (cfg['nameBoxH']*mm - cfg['nameFont'])/2.0, name_str)
+                
+                # Bottom Row: barcode left, price right
+                bottom_y = curr_y - cfg['barcodeH'] * mm - cfg['digitsBoxH'] * mm
+                draw_barcode(x + cfg['padLeft'] * mm, bottom_y + cfg['digitsBoxH'] * mm, cfg['barcodeW'], cfg['barcodeH'], barcode_value)
+                
+                if barcode_value:
+                    c.setFont("Helvetica", cfg['digitsFont'])
+                    c.drawCentredString(x + cfg['padLeft'] * mm + cfg['barcodeW'] * mm / 2.0, bottom_y + (cfg['digitsBoxH']*mm - cfg['digitsFont'])/2.0, barcode_value)
+                
+                if cfg['showPrice']:
+                    price_str = f"₹{p.selling_price}"
+                    c.setFont("Helvetica-Bold", cfg['priceFont'])
+                    price_w = stringWidth(price_str, "Helvetica-Bold", cfg['priceFont'])
+                    price_x = x + cfg['labelW'] * mm - cfg['padRight'] * mm - price_w
+                    price_y_center = bottom_y + (cfg['barcodeH'] + cfg['digitsBoxH']) * mm / 2.0 - cfg['priceFont']/2.0
+                    c.drawString(price_x, price_y_center, price_str)
+            
+            elif layout == 'rotated': # l40
+                c.saveState()
+                # Translate to bottom-left of the cell, then translate to W and rotate 90.
+                c.translate(x, y)
+                c.translate(label_w, 0)
+                c.rotate(90)
+                
+                # Now we draw in a space where width = 73mm, height = 18mm
+                r_w = cfg['labelH'] * mm
+                r_h = cfg['labelW'] * mm
+                
+                cx = r_w / 2.0
+                curr_y = r_h - cfg['padTop'] * mm
+                
+                if cfg['showCompany'] and company_name:
+                    c.setFont("Helvetica-Bold", cfg['companyFont'])
+                    co = truncate_text(company_name.upper(), "Helvetica-Bold", cfg['companyFont'], (cfg['labelH'] - cfg['padLeft'] - cfg['padRight']) * mm)
+                    curr_y -= cfg['companyBoxH'] * mm
+                    c.drawCentredString(cx, curr_y + (cfg['companyBoxH']*mm - cfg['companyFont'])/2.0, co)
+                
+                curr_y -= cfg['barcodeH'] * mm
+                bc_x = (r_w - cfg['barcodeW'] * mm) / 2.0
+                draw_barcode(bc_x, curr_y, cfg['barcodeW'], cfg['barcodeH'], barcode_value)
+                
+                curr_y -= cfg['digitsBoxH'] * mm
+                if barcode_value:
+                    c.setFont("Helvetica", cfg['digitsFont'])
+                    c.drawCentredString(cx, curr_y + (cfg['digitsBoxH']*mm - cfg['digitsFont'])/2.0, barcode_value)
+                
+                curr_y -= cfg['bottomRowH'] * mm
+                usable_w = (cfg['labelH'] - cfg['padLeft'] - cfg['padRight']) * mm
+                price_str = f"₹{p.selling_price}"
+                c.setFont("Helvetica-Bold", cfg['priceFont'])
+                price_w = stringWidth(price_str, "Helvetica-Bold", cfg['priceFont'])
+                
+                if cfg['showName']:
+                    name_max_w = usable_w - price_w - 2 * mm
+                    c.setFont("Helvetica-Bold", cfg['nameFont'])
+                    name_str = truncate_text(p.name, "Helvetica-Bold", cfg['nameFont'], name_max_w)
+                    c.drawString(cfg['padLeft'] * mm, curr_y + (cfg['bottomRowH']*mm - cfg['nameFont'])/2.0, name_str)
+                
+                if cfg['showPrice']:
+                    c.setFont("Helvetica-Bold", cfg['priceFont'])
+                    c.drawString(r_w - cfg['padRight'] * mm - price_w, curr_y + (cfg['bottomRowH']*mm - cfg['priceFont'])/2.0, price_str)
+                
+                c.restoreState()
+
         c.save()
         buffer.seek(0)
-        
+
         response = HttpResponse(buffer, content_type='application/pdf')
         response['Content-Disposition'] = 'attachment; filename="barcodes.pdf"'
         return response

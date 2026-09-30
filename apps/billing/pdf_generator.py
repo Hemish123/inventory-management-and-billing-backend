@@ -215,7 +215,22 @@ def generate_bill_pdf(bill):
         elements.append(Paragraph(f"Paid by: {bill.payment_method}", center_bold))
         
     # 7. Footer
-    elements.append(Spacer(1, 5*mm))
+    elements.append(Spacer(1, 3*mm))
+    elements.append(Paragraph("-" * 42, center_normal))
+    elements.append(Spacer(1, 2*mm))
+    
+    # No Exchange No Return policy
+    no_exchange_style = ParagraphStyle(
+        'NoExchange',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9,
+        alignment=1,  # Center
+        spaceAfter=2,
+        textColor=colors.black,
+    )
+    elements.append(Paragraph("*** NO EXCHANGE / NO RETURN ***", no_exchange_style))
+    elements.append(Spacer(1, 3*mm))
     elements.append(Paragraph("Thank you for shopping with us!", center_bold))
     elements.append(Paragraph("Please visit again.", center_normal))
     

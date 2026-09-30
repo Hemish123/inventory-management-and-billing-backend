@@ -88,6 +88,10 @@ class Bill(models.Model):
     cashier = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='bills_created'
     )
+    salesperson = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales_made',
+        help_text='Sales person selected in POS'
+    )
 
     class Meta:
         ordering = ['-billing_date']

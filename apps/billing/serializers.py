@@ -85,6 +85,8 @@ class BillCreateSerializer(serializers.Serializer):
     # Whether this is a draft/hold
     save_as_draft = serializers.BooleanField(default=False)
     save_as_hold = serializers.BooleanField(default=False)
+    # Selected salesperson
+    salesperson_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class BillListSerializer(serializers.ModelSerializer):

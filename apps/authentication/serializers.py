@@ -71,6 +71,14 @@ class LoginSerializer(serializers.Serializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
     role_name = serializers.CharField(read_only=True, default='')
+    company_name = serializers.SerializerMethodField()
+    company_gst = serializers.SerializerMethodField()
+    company_email = serializers.SerializerMethodField()
+    company_street = serializers.SerializerMethodField()
+    company_city = serializers.SerializerMethodField()
+    company_state = serializers.SerializerMethodField()
+    company_pin = serializers.SerializerMethodField()
+    company_logo = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -78,12 +86,56 @@ class UserProfileSerializer(serializers.ModelSerializer):
                   'phone', 'department', 'designation', 'employee_id',
                   'assigned_branch', 'assigned_warehouse', 'role', 'role_name',
                   'profile_photo', 'must_change_password', 'company',
+                  'company_name', 'company_gst', 'company_email',
+                  'company_street', 'company_city', 'company_state',
+                  'company_pin', 'company_logo',
                   'created_at']
         read_only_fields = ['id', 'email', 'created_at']
+
+    def _co(self, obj):
+        return obj.company if hasattr(obj, 'company') and obj.company else None
+
+    def get_company_name(self, obj):
+        co = self._co(obj)
+        return co.name if co else ''
+
+    def get_company_gst(self, obj):
+        co = self._co(obj)
+        return co.gst_number if co else ''
+
+    def get_company_email(self, obj):
+        co = self._co(obj)
+        return co.email if co else ''
+
+    def get_company_street(self, obj):
+        co = self._co(obj)
+        return co.address if co else ''
+
+    def get_company_city(self, obj):
+        co = self._co(obj)
+        return co.city if co else ''
+
+    def get_company_state(self, obj):
+        co = self._co(obj)
+        return co.state if co else ''
+
+    def get_company_pin(self, obj):
+        co = self._co(obj)
+        return co.pincode if co else ''
+
+    def get_company_logo(self, obj):
+        co = self._co(obj)
+        if co and co.logo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(co.logo.url)
+            return co.logo.url
+        return ''
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
     role_name = serializers.CharField(read_only=True, default='')
+    email = serializers.EmailField(required=False, allow_blank=True)
 
     class Meta:
         model = User

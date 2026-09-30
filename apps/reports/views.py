@@ -115,6 +115,9 @@ class SalesReportView(APIView):
             qs = qs.filter(cashier=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
+        cashier_id = request.query_params.get('cashier')
+        if cashier_id:
+            qs = qs.filter(cashier_id=cashier_id)
 
         daily = qs.annotate(
             day=TruncDate('billing_date')
@@ -133,6 +136,24 @@ class SalesReportView(APIView):
             avg_bill=Avg('grand_total'),
         )
 
+        employee_data = qs.values('salesperson__first_name', 'salesperson__last_name', 'salesperson__username').annotate(
+            total_revenue=Sum('grand_total'),
+            total_bills=Count('id'),
+            avg_bill=Avg('grand_total'),
+        ).order_by('-total_revenue')
+
+        person_wise = []
+        for e in employee_data:
+            first_name = e['salesperson__first_name'] or ''
+            last_name = e['salesperson__last_name'] or ''
+            name = f"{first_name} {last_name}".strip() or e['salesperson__username'] or 'Self (Default)'
+            person_wise.append({
+                 'employee': name,
+                 'revenue': float(e['total_revenue'] or 0),
+                 'bills': e['total_bills'],
+                 'avg_bill': float(e['avg_bill'] or 0)
+            })
+
         data = {
             'summary': {k: float(v or 0) for k, v in summary.items()},
             'daily': [{
@@ -142,6 +163,7 @@ class SalesReportView(APIView):
                 'discount': float(d['discount'] or 0),
                 'bills': d['count'],
             } for d in daily],
+            'person_wise': person_wise,
         }
 
         # Export support
@@ -520,8 +542,10 @@ class EmployeeSalesReportView(APIView):
             qs = qs.filter(cashier=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
-
-        employee_data = qs.values('cashier__first_name', 'cashier__last_name', 'cashier__username').annotate(
+        cashier_id = request.query_params.get('cashier')
+        if cashier_id:
+            qs = qs.filter(cashier_id=cashier_id)
+        employee_data = qs.values('salesperson__first_name', 'salesperson__last_name', 'salesperson__username').annotate(
             total_revenue=Sum('grand_total'),
             total_bills=Count('id'),
             avg_bill=Avg('grand_total'),
@@ -529,9 +553,9 @@ class EmployeeSalesReportView(APIView):
 
         data = []
         for e in employee_data:
-            first_name = e['cashier__first_name'] or ''
-            last_name = e['cashier__last_name'] or ''
-            name = f"{first_name} {last_name}".strip() or e['cashier__username'] or 'Unknown'
+            first_name = e['salesperson__first_name'] or ''
+            last_name = e['salesperson__last_name'] or ''
+            name = f"{first_name} {last_name}".strip() or e['salesperson__username'] or 'Self (Default)'
             
             data.append({
                  'employee': name,

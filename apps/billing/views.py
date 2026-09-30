@@ -113,6 +113,17 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 amount_received = data.get('amount_received', grand_total)
                 change_due = max(Decimal('0'), amount_received - grand_total)
 
+                # Determine salesperson if provided
+                from apps.authentication.models import CustomUser
+                cashier_user = request.user
+                salesperson_user = None
+                salesperson_id = data.get('salesperson_id')
+                if salesperson_id:
+                    try:
+                        salesperson_user = CustomUser.objects.get(id=salesperson_id, company=request.user.company)
+                    except CustomUser.DoesNotExist:
+                        pass
+
                 bill = Bill.objects.create(
                     company=request.user.company,
                     bill_number=bill_number,
@@ -132,7 +143,8 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                     amount_received=amount_received,
                     change_due=change_due,
                     notes=data.get('notes', ''),
-                    cashier=request.user,
+                    cashier=cashier_user,
+                    salesperson=salesperson_user,
                 )
 
                 # Create line items

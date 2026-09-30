@@ -45,7 +45,7 @@ class RegisterView(APIView):
             refresh = RefreshToken.for_user(user)
             return api_response(
                 data={
-                    'user': UserProfileSerializer(user).data,
+                    'user': UserProfileSerializer(user, context={'request': request}).data,
                     'tokens': {
                         'access': str(refresh.access_token),
                         'refresh': str(refresh),
@@ -77,7 +77,7 @@ class LoginView(APIView):
             refresh = RefreshToken.for_user(user)
             return api_response(
                 data={
-                    'user': UserProfileSerializer(user).data,
+                    'user': UserProfileSerializer(user, context={'request': request}).data,
                     'tokens': {
                         'access': str(refresh.access_token),
                         'refresh': str(refresh),
@@ -131,7 +131,7 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserProfileSerializer(request.user)
+        serializer = UserProfileSerializer(request.user, context={'request': request})
         return api_response(data=serializer.data)
 
     def put(self, request):
@@ -159,7 +159,12 @@ class EmployeeViewSet(TenantMixin, viewsets.ModelViewSet):
     
     def get_queryset(self):
         qs = super().get_queryset()
-        return qs.exclude(id=self.request.user.id)
+        qs = qs.exclude(id=self.request.user.id)
+        # Filter by role name if provided
+        role_filter = self.request.query_params.get('role')
+        if role_filter:
+            qs = qs.filter(role__name__iexact=role_filter)
+        return qs
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
@@ -206,29 +211,45 @@ class EmployeeViewSet(TenantMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from django.utils.crypto import get_random_string
+        import uuid
+        
         user = serializer.save(company=self.request.user.company, must_change_password=True)
+        
+        # Auto-generate placeholder email for users without email (e.g. Sales role)
+        if not user.email:
+            placeholder = f"staff_{user.id}_{uuid.uuid4().hex[:6]}@placeholder.local"
+            user.email = placeholder
+            if not user.username:
+                user.username = placeholder
+            user.save()
+        
+        if not user.username:
+            user.username = user.email
+            user.save()
+        
         password = get_random_string(length=12)
         user.set_password(password) # random password for newly created employees
         user.save()
 
-        # Send credentials via email
-        try:
-            subject = 'Your Employee Account Credentials'
-            message = (
-                f"Hello {user.first_name or user.username},\n\n"
-                f"An employee account has been created for you at {user.company.name if user.company else 'our company'}.\n\n"
-                f"Here are your login credentials:\n"
-                f"Email: {user.email}\n"
-                f"Password: {password}\n\n"
-                f"Please change your password after logging in."
-            )
-            send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                fail_silently=True,
-            )
-        except Exception:
-            pass
+        # Send credentials via email (skip for placeholder emails)
+        if user.email and not user.email.endswith('@placeholder.local'):
+            try:
+                subject = 'Your Employee Account Credentials'
+                message = (
+                    f"Hello {user.first_name or user.username},\n\n"
+                    f"An employee account has been created for you at {user.company.name if user.company else 'our company'}.\n\n"
+                    f"Here are your login credentials:\n"
+                    f"Email: {user.email}\n"
+                    f"Password: {password}\n\n"
+                    f"Please change your password after logging in."
+                )
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=True,
+                )
+            except Exception:
+                pass
 
