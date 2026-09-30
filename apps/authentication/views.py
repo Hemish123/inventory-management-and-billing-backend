@@ -137,8 +137,29 @@ class MeView(APIView):
     def put(self, request):
         serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
-            return api_response(data=serializer.data, message='Profile updated')
+            user = serializer.save()
+            
+            # Manually update company fields since they are read-only in the serializer
+            if user.company:
+                co = user.company
+                if 'company_name' in request.data: co.name = request.data['company_name']
+                if 'company_gst' in request.data: co.gst_number = request.data['company_gst']
+                if 'company_email' in request.data: co.email = request.data['company_email']
+                if 'company_street' in request.data: co.address = request.data['company_street']
+                if 'company_city' in request.data: co.city = request.data['company_city']
+                if 'company_state' in request.data: co.state = request.data['company_state']
+                if 'company_pin' in request.data: co.pincode = request.data['company_pin']
+                
+                # Check for logo in FILES
+                if 'company_logo' in request.FILES:
+                    co.logo = request.FILES['company_logo']
+                
+                co.save()
+                
+            return api_response(
+                data=UserProfileSerializer(user, context={'request': request}).data, 
+                message='Profile updated'
+            )
         return api_error(errors=serializer.errors)
 
 
