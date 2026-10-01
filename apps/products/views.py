@@ -193,6 +193,45 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
         serializer = BranchStockSerializer(stocks, many=True)
         return api_response(data=serializer.data)
 
+    @action(detail=False, methods=['get'], url_path='dead-stock')
+    def dead_stock(self, request):
+        """List products that have not been sold within their dead_stock_days threshold."""
+        from django.utils import timezone
+        from apps.billing.models import BillItem
+        from django.db.models import Max, F, Value, IntegerField
+        from datetime import timedelta
+
+        products = self.get_queryset()
+
+        # Annotate each product with its last sale date from completed bills
+        products = products.annotate(
+            last_sold_date=Max(
+                'bill_items__bill__billing_date',
+                filter=models.Q(bill_items__bill__status='COMPLETED')
+            )
+        )
+
+        now = timezone.now()
+        dead_products = []
+        for p in products:
+            threshold_date = now - timedelta(days=p.dead_stock_days)
+            if p.last_sold_date is None or p.last_sold_date < threshold_date:
+                dead_products.append({
+                    'id': p.id,
+                    'name': p.name,
+                    'barcode': p.barcode,
+                    'sku': p.sku,
+                    'category_name': p.category.name if p.category else '',
+                    'selling_price': str(p.selling_price),
+                    'cost_price': str(p.cost_price),
+                    'total_stock': p.total_stock or 0,
+                    'dead_stock_days': p.dead_stock_days,
+                    'last_sold_date': p.last_sold_date.isoformat() if p.last_sold_date else None,
+                    'days_since_last_sale': (now - p.last_sold_date).days if p.last_sold_date else None,
+                })
+
+        return api_response(data=dead_products)
+
     @action(detail=False, methods=['get'], url_path='barcode-lookup')
     def barcode_lookup(self, request):
         barcode = request.query_params.get('code', '')

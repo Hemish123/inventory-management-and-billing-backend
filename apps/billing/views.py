@@ -34,6 +34,10 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
+        # Phone search
+        phone = self.request.query_params.get('phone')
+        if phone:
+            qs = qs.filter(customer_phone__icontains=phone)
             
         if self.request.user.role_name == 'EMPLOYEE':
             qs = qs.filter(cashier=self.request.user)
@@ -47,6 +51,11 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
+        return api_response(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = BillSerializer(instance)
         return api_response(data=serializer.data)
 
     @action(detail=True, methods=['get'], url_path='pdf', permission_classes=[])
@@ -313,6 +322,117 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 )
 
         return api_response(message='Bill voided and stock restored')
+
+    # ──────────────────────────────────────────────────────────────
+    # Update a completed bill (partial return / item changes)
+    # ──────────────────────────────────────────────────────────────
+    @action(detail=True, methods=['post'], url_path='update-bill')
+    def update_bill(self, request, pk=None):
+        """Update a completed bill — adjusts items and stock accordingly.
+        Supports partial returns: customer returns some items after purchase.
+        """
+        bill = self.get_object()
+        if bill.status not in ('COMPLETED',):
+            return api_error(message='Only completed bills can be updated for returns')
+
+        new_items = request.data.get('items', [])
+        if not new_items:
+            return api_error(message='At least one item is required')
+
+        try:
+            with transaction.atomic():
+                # 1. Restore stock for ALL old items
+                for item in bill.items.select_related('product'):
+                    qty = int(item.quantity)
+                    branch_stock, _ = BranchStock.objects.get_or_create(
+                        company=bill.company, product=item.product,
+                        branch=bill.branch, warehouse=None,
+                        defaults={'quantity': 0}
+                    )
+                    branch_stock.quantity += qty
+                    branch_stock.save()
+
+                    StockMovement.objects.create(
+                        company=bill.company,
+                        product=item.product,
+                        branch=bill.branch,
+                        movement_type='IN',
+                        reason='RETURN',
+                        quantity=qty,
+                        balance_after=branch_stock.quantity,
+                        reference_type='bill_update',
+                        reference_id=bill.bill_number,
+                        notes=f'Stock restored for bill update',
+                        created_by=request.user,
+                    )
+
+                # 2. Delete old bill items
+                bill.items.all().delete()
+
+                # 3. Create new bill items and recalculate totals
+                tax_total = Decimal('0')
+                subtotal = Decimal('0')
+
+                for item_data in new_items:
+                    product = Product.objects.get(id=item_data['product'])
+                    tax_amt = Decimal(str(item_data.get('tax_amount', 0)))
+                    line_total = Decimal(str(item_data['line_total']))
+
+                    BillItem.objects.create(
+                        company=bill.company,
+                        bill=bill,
+                        product=product,
+                        product_name=item_data.get('product_name', product.name),
+                        barcode=item_data.get('barcode', product.barcode),
+                        hsn_code=item_data.get('hsn_code', product.hsn_code),
+                        quantity=Decimal(str(item_data['quantity'])),
+                        unit_price=Decimal(str(item_data['unit_price'])),
+                        discount_type=item_data.get('discount_type', 'NONE'),
+                        discount_percentage=Decimal(str(item_data.get('discount_percentage', 0))),
+                        discount_amount=Decimal(str(item_data.get('discount_amount', 0))),
+                        tax_percentage=item_data.get('tax_percentage', 0),
+                        tax_amount=tax_amt,
+                        line_total=line_total,
+                    )
+                    tax_total += tax_amt
+                    subtotal += line_total - tax_amt
+
+                # 4. Recalculate bill totals
+                discount_type = request.data.get('discount_type', bill.discount_type)
+                discount_pct = Decimal(str(request.data.get('discount_percentage', bill.discount_percentage)))
+                discount_amount = Decimal(str(request.data.get('discount_amount', bill.discount_amount)))
+                if discount_type == 'PERCENTAGE' and discount_pct > 0:
+                    discount_amount = subtotal * discount_pct / 100
+
+                round_off = Decimal(str(request.data.get('round_off', 0)))
+                grand_total = subtotal + tax_total - discount_amount + round_off
+                amount_received = Decimal(str(request.data.get('amount_received', grand_total)))
+                change_due = max(Decimal('0'), amount_received - grand_total)
+
+                bill.subtotal = subtotal
+                bill.tax_total = tax_total
+                bill.discount_type = discount_type
+                bill.discount_amount = discount_amount
+                bill.discount_percentage = discount_pct
+                bill.round_off = round_off
+                bill.grand_total = grand_total
+                bill.amount_received = amount_received
+                bill.change_due = change_due
+                bill.save()
+
+                # 5. Deduct stock for new items
+                self._deduct_stock(bill, request.user)
+
+        except ValueError as e:
+            return api_error(message=str(e))
+        except Product.DoesNotExist:
+            return api_error(message='One or more products not found')
+
+        result_serializer = BillSerializer(bill)
+        return api_response(
+            data=result_serializer.data,
+            message=f'Bill {bill.bill_number} updated successfully. Stock adjusted.'
+        )
 
     # ──────────────────────────────────────────────────────────────
     # Private helper — stock deduction

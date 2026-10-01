@@ -88,6 +88,9 @@ class Product(models.Model):
     minimum_stock_level = models.IntegerField(default=10)
     reorder_level = models.IntegerField(default=5, help_text='Suggest reorder when stock falls below')
 
+    # Dead stock tracking
+    dead_stock_days = models.IntegerField(default=90, help_text='Mark as dead stock if no sale in this many days')
+
     # Image
     image = models.ImageField(upload_to='product_images/', null=True, blank=True)
 

@@ -50,6 +50,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'supplier', 'supplier_name',
             'unit', 'cost_price', 'selling_price',
             'hsn_code', 'tax_percentage', 'minimum_stock_level', 'reorder_level',
+            'dead_stock_days',
             'image', 'is_active',
             'total_stock', 'branch_stocks',
             'created_at', 'updated_at',
@@ -67,7 +68,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = ['id', 'sku', 'barcode', 'name', 'category_name',
                   'selling_price', 'cost_price', 'total_stock',
-                  'minimum_stock_level', 'reorder_level', 'is_active']
+                  'minimum_stock_level', 'reorder_level', 'dead_stock_days', 'is_active']
 
 
 class ProductDropdownSerializer(serializers.ModelSerializer):

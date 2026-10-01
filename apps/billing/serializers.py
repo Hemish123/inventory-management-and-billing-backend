@@ -96,5 +96,6 @@ class BillListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bill
         fields = ['id', 'bill_number', 'branch_name', 'customer_name',
+                  'customer_phone',
                   'billing_date', 'grand_total', 'payment_method', 'status',
                   'cashier_name']

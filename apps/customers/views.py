@@ -13,7 +13,7 @@ class CustomerViewSet(TenantMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = Customer.objects.all()
     filterset_class = CustomerFilter
-    search_fields = ['name', 'company', 'email', 'gstin']
+    search_fields = ['name', 'company', 'email', 'gstin', 'phone']
     ordering_fields = ['name', 'created_at', 'updated_at']
 
     def get_serializer_class(self):
