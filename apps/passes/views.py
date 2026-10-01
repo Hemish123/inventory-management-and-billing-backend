@@ -32,8 +32,15 @@ def _get_client_ip(request: HttpRequest) -> str:
     """Extract client IP from request (respects X-Forwarded-For)."""
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
     if xff:
-        return xff.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "0.0.0.0")
+        ip = xff.split(",")[0].strip()
+    else:
+        ip = request.META.get("REMOTE_ADDR", "0.0.0.0")
+        
+    # Azure App Service sometimes appends a port to IPv4 (e.g., "110.226.114.150:25524")
+    # If there's exactly one colon, it's an IPv4 with a port.
+    if ip.count(":") == 1:
+        ip = ip.split(":")[0]
+    return ip
 
 
 def _check_gate_key(request: HttpRequest) -> bool:
