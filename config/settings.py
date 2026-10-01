@@ -358,3 +358,4 @@ FACE_MODEL_PACK = "buffalo_l"
 FACE_USE_GPU = False
 
 GATE_MAX_ENTRIES_PER_DAY = 1
+GATE_KEY = os.environ.get("GATE_KEY", "secret-gate-123")
