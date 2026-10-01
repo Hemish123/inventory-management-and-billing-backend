@@ -1,0 +1,55 @@
+{% extends "passes/base.html" %}
+{% load static %}
+
+{% block title %}Gate — Face Scan{% endblock %}
+
+{% block body %}
+{# Full-screen gate layout — no header/footer for maximum screen usage #}
+<div id="gateApp" class="gate-container">
+    <!-- Camera View -->
+    <div id="cameraView" class="gate-camera-view">
+        <div class="camera-header">
+            <h2 class="camera-title">🪔 Navratri Gate</h2>
+            <button id="switchCameraBtn" class="btn btn-sm btn-outline-light" title="Switch Camera">
+                <i class="bi bi-arrow-repeat"></i>
+            </button>
+        </div>
+
+        <div class="camera-wrapper">
+            <video id="cameraFeed" autoplay playsinline muted></video>
+            <canvas id="cameraCanvas" style="display:none;"></canvas>
+            <div id="cameraOverlay" class="camera-overlay">
+                <div class="face-guide"></div>
+            </div>
+        </div>
+
+        <div class="camera-controls">
+            <button id="captureBtn" class="capture-btn" title="Capture Photo">
+                <div class="capture-btn-inner"></div>
+            </button>
+        </div>
+
+        <!-- Upload fallback -->
+        <div class="upload-fallback">
+            <label for="uploadInput" class="btn btn-sm btn-outline-light">
+                <i class="bi bi-upload me-1"></i>Upload Photo
+            </label>
+            <input type="file" id="uploadInput" accept="image/*" class="d-none">
+        </div>
+
+        <div id="processingOverlay" class="processing-overlay" style="display:none;">
+            <div class="spinner-border text-light" style="width:3rem;height:3rem;"></div>
+            <p class="text-white mt-3">Verifying face...</p>
+        </div>
+    </div>
+
+    <!-- Result View (hidden initially) -->
+    <div id="resultView" class="gate-result-view" style="display:none;"></div>
+</div>
+
+<input type="hidden" id="gateKey" value="{{ gate_key }}">
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'passes/js/camera.js' %}"></script>
+{% endblock %}

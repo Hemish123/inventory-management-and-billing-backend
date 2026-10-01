@@ -1,0 +1,43 @@
+{% extends "passes/base.html" %}
+
+{% block title %}Registration Complete{% endblock %}
+{% block header_subtitle %}Registration Successful{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+        <div class="glass-card p-4 text-center">
+            <div class="success-icon-wrapper mb-4">
+                <div class="success-icon">
+                    <i class="bi bi-check-lg"></i>
+                </div>
+            </div>
+
+            <h2 class="text-white mb-3">Registration Complete!</h2>
+
+            <div class="pass-badge mb-3">{{ pass_obj.pass_number }}</div>
+
+            <div class="result-details mb-4">
+                <p class="mb-1"><strong>Name:</strong> {{ registration.full_name }}</p>
+                <p class="mb-1"><strong>Mobile:</strong> {{ registration.mobile }}</p>
+                {% if registration.email %}
+                <p class="mb-1"><strong>Email:</strong> {{ registration.email }}</p>
+                {% endif %}
+            </div>
+
+            <div class="alert alert-success-custom">
+                <i class="bi bi-info-circle-fill me-2"></i>
+                Your face has been registered for Navratri entry verification.
+                Simply show your face at the gate — no pass or QR code needed!
+            </div>
+
+            {% if registration.needs_review %}
+            <div class="alert alert-warning mt-3">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                Your pass number could not be auto-verified. An admin will review your registration shortly.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

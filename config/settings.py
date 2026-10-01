@@ -13,7 +13,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 
 DEBUG = False
-
 ALLOWED_HOSTS = ['*']
 
 # Application definition
@@ -41,6 +40,7 @@ INSTALLED_APPS = [
     'apps.purchases',
     'apps.reports',
     'drf_spectacular',
+    'apps.passes',
 ]
 
 MIDDLEWARE = [
@@ -337,3 +337,24 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
+
+# ──────────────────────────────────────────────
+# AZURE OPENAI (for Navratri Face Pass)
+# ──────────────────────────────────────────────
+AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "https://jivihireopenai.openai.azure.com")
+AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_KEY", "")
+AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+AZURE_OPENAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+
+# ──────────────────────────────────────────────
+# Navratri Face Engine Configuration
+# ──────────────────────────────────────────────
+FACE_MATCH_THRESHOLD = 0.45
+FACE_REVIEW_THRESHOLD = 0.35
+FACE_MIN_DET_SCORE = 0.6
+FACE_MIN_FACE_SIZE = 80
+FACE_BLUR_THRESHOLD = 10.0
+FACE_MODEL_PACK = "buffalo_l"
+FACE_USE_GPU = False
+
+GATE_MAX_ENTRIES_PER_DAY = 1

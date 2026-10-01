@@ -20,6 +20,8 @@ urlpatterns = [
     path('api/stock/', include('apps.stock.urls')),
     path('api/purchases/', include('apps.purchases.urls')),
     path('api/reports/', include('apps.reports.urls')),
+    path('navratri/', include('apps.passes.urls')),
+
 ]
 
 from django.urls import re_path
