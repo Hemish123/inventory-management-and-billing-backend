@@ -2,7 +2,7 @@
 
 from django.db import migrations, models
 import django.db.models.deletion
-import passes.models
+import apps.passes.models
 import uuid
 
 
@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ('pass_number', models.CharField(db_index=True, max_length=50, unique=True)),
-                ('token', models.CharField(db_index=True, default=passes.models.generate_pass_token, max_length=64, unique=True)),
+                ('token', models.CharField(db_index=True, default=apps.passes.models.generate_pass_token, max_length=64, unique=True)),
                 ('pass_type', models.CharField(blank=True, default='', max_length=50)),
                 ('event_date_from', models.DateField(blank=True, null=True)),
                 ('event_date_to', models.DateField(blank=True, null=True)),
