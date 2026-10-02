@@ -190,6 +190,18 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 # Only deduct stock for COMPLETED bills (not DRAFT/HOLD)
                 if target_status == 'COMPLETED':
                     self._deduct_stock(bill, request.user)
+                    
+                    # Conditionally send WhatsApp receipt if requested by frontend
+                    send_whatsapp = request.data.get('send_whatsapp', False)
+                    # print(f"DEBUG WHATSAPP: send_whatsapp_param={send_whatsapp}, phone={getattr(bill, 'customer_phone', None)}")
+                    
+                    if send_whatsapp and getattr(bill, 'customer_phone', None):
+                        try:
+                            success, msg_result = self._send_whatsapp_message(bill)
+                            if not success:
+                                print(f'WHATSAPP ERROR: {msg_result}')
+                        except Exception as e:
+                            print(f'WHATSAPP EXCEPTION: {e}')
         except ValueError as e:
             return api_error(message=str(e))
 
@@ -240,6 +252,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         try:
             with transaction.atomic():
                 # Update payment info if provided
+                send_whatsapp = request.data.get('send_whatsapp', False)
                 payment_method = request.data.get('payment_method', bill.payment_method)
                 amount_received = Decimal(str(request.data.get('amount_received', bill.grand_total)))
                 change_due = max(Decimal('0'), amount_received - bill.grand_total)
@@ -470,3 +483,81 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 reference_id=bill.bill_number,
                 created_by=user,
             )
+
+    def _send_whatsapp_message(self, bill, override_phone=None):
+        import requests
+        import os
+        from django.conf import settings
+        
+        phone_number = override_phone or bill.customer_phone
+        if not phone_number:
+            return False, "Customer phone number is required"
+            
+        if not phone_number.startswith('91'):
+            phone_number = f"91{phone_number}"
+            
+        meta_token = os.environ.get('META_WHATSAPP_TOKEN')
+        phone_id = os.environ.get('META_PHONE_ID')
+        
+        if not meta_token or not phone_id:
+            return False, "WhatsApp API is not configured"
+            
+        url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {meta_token}",
+            "Content-Type": "application/json"
+        }
+        
+        customer_name = bill.customer_name or "Walk-in Customer"
+        company_name = getattr(bill.company, 'name', 'Our Store')
+        branch_name = getattr(bill.branch, 'name', bill.branch.code if getattr(bill, 'branch', None) else 'Store')
+        cashier_name = bill.cashier.get_full_name() if getattr(bill, 'cashier', None) and bill.cashier.get_full_name() else getattr(bill.cashier, 'username', 'Cashier')
+        
+        items_lines = []
+        for item in bill.items.all():
+            items_lines.append(f"{item.product_name}    {item.quantity:.2f} x {item.unit_price:.2f}    {item.line_total:.2f}")
+        items_str = "\n".join(items_lines)
+        
+        variables = [
+            str(customer_name),
+            str(company_name),
+            str(bill.bill_number),
+            __import__('django.utils.timezone').utils.timezone.localtime(bill.billing_date).strftime('%d-%m-%Y %I:%M %p'),
+            str(branch_name),
+            str(cashier_name),
+            str(customer_name),
+            str(phone_number),
+            str(items_str) if items_str else "-",
+            f"{bill.subtotal:.2f}",
+            f"{bill.tax_total:.2f}",
+            f"{bill.round_off:+.2f}",
+            f"{bill.grand_total:.2f}",
+            str(bill.get_payment_method_display())
+        ]
+        
+        data = {
+            "messaging_product": "whatsapp",
+            "to": phone_number,
+            "type": "template",
+            "template": {
+                "name": "bill_invoice_receipt",
+                "language": {
+                    "code": "en"
+                },
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": [{"type": "text", "text": val} for val in variables]
+                    }
+                ]
+            }
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            if response.status_code == 200:
+                return True, "WhatsApp message sent successfully!"
+            else:
+                return False, f"Failed to send: {response.json()}"
+        except Exception as e:
+            return False, str(e)

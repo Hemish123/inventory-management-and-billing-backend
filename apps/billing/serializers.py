@@ -87,6 +87,7 @@ class BillCreateSerializer(serializers.Serializer):
     save_as_hold = serializers.BooleanField(default=False)
     # Selected salesperson
     salesperson_id = serializers.IntegerField(required=False, allow_null=True)
+    send_whatsapp = serializers.BooleanField(default=False)
 
 
 class BillListSerializer(serializers.ModelSerializer):
