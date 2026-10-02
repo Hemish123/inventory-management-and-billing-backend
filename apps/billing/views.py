@@ -475,6 +475,15 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 # 5. Deduct stock for new items
                 self._deduct_stock(bill, request.user)
 
+                send_whatsapp = request.data.get('send_whatsapp', False)
+                if send_whatsapp and getattr(bill, 'customer_phone', None):
+                    try:
+                        success, msg_result = self._send_whatsapp_message(bill)
+                        if not success:
+                            print(f'WHATSAPP ERROR: {msg_result}')
+                    except Exception as e:
+                        print(f'WHATSAPP EXCEPTION: {e}')
+
         except ValueError as e:
             return api_error(message=str(e))
         except Product.DoesNotExist:
