@@ -18,7 +18,7 @@ from io import StringIO
 
 from django.core.management.base import BaseCommand
 
-from passes.models import Pass
+from apps.passes.models import Pass
 
 
 class Command(BaseCommand):

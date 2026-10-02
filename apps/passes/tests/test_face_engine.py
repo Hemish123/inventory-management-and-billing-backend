@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 from django.test import TestCase, override_settings
 
-from passes.services.face_engine import (
+from apps.passes.services.face_engine import (
     FaceResult,
     MatchResult,
     QualityError,

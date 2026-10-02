@@ -19,8 +19,8 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from passes.models import EntryLog, Pass, Registration
-from passes.services.face_engine import invalidate_embedding_cache
+from apps.passes.models import EntryLog, Pass, Registration
+from apps.passes.services.face_engine import invalidate_embedding_cache
 
 logger = logging.getLogger("passes")
 

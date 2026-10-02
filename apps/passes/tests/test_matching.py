@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 from django.test import TestCase, override_settings
 
-from passes.services.face_engine import MatchResult
+from apps.passes.services.face_engine import MatchResult
 
 
 class CosineSimTests(TestCase):

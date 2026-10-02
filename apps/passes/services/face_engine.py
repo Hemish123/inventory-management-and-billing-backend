@@ -228,7 +228,7 @@ def _load_embedding_matrix() -> tuple[np.ndarray, list]:
     Uses a version counter in Django cache so multiple workers stay in sync.
     """
     from django.core.cache import cache
-    from passes.models import Registration
+    from apps.passes.models import Registration
 
     current_version = cache.get("embedding_version", 0)
 

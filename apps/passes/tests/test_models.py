@@ -5,7 +5,7 @@ import uuid
 
 from django.test import TestCase
 
-from passes.models import EntryLog, Pass, Registration
+from apps.passes.models import EntryLog, Pass, Registration
 
 
 class PassModelTests(TestCase):

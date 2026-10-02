@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
 
-from passes.services.pass_reader import (
+from apps.passes.services.pass_reader import (
     normalise_pass_number,
     read_pass_number,
     verify_pass_number,

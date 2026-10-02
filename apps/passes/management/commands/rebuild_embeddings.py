@@ -13,8 +13,8 @@ import numpy as np
 
 from django.core.management.base import BaseCommand
 
-from passes.models import Registration
-from passes.services.face_engine import invalidate_embedding_cache
+from apps.passes.models import Registration
+from apps.passes.services.face_engine import invalidate_embedding_cache
 
 
 class Command(BaseCommand):

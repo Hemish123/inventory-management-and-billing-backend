@@ -13,8 +13,8 @@ from PIL import Image
 
 from django.test import TestCase, Client, override_settings
 
-from passes.models import EntryLog, Pass, Registration
-from passes.services.face_engine import FaceResult
+from apps.passes.models import EntryLog, Pass, Registration
+from apps.passes.services.face_engine import FaceResult
 
 
 def _create_test_image(width: int = 400, height: int = 400) -> io.BytesIO:
