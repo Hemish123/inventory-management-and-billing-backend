@@ -216,11 +216,13 @@ def gate_verify_view(request: HttpRequest) -> JsonResponse:
         # 1. Gather all matches above the MATCH threshold
         valid_matches = [m for m in matches if m.score >= settings.FACE_MATCH_THRESHOLD]
         
+        # Pre-compute best score from all matches for REVIEW/NO_MATCH branches
+        best_score = matches[0].score if matches else 0.0
+        best_pass = None
+        best_reg = None
+        scan_blob = storage.upload_photo(scan_bytes, prefix="gate_scans")
+
         if valid_matches:
-            best_pass = None
-            best_reg = None
-            best_score = 0.0
-            
             # Try to find a pass that is NOT blocked and NOT already used today
             for m in valid_matches:
                 try:
@@ -246,12 +248,20 @@ def gate_verify_view(request: HttpRequest) -> JsonResponse:
             # If all valid matches are blocked/used, fall back to the very first (highest score) match
             if not best_pass:
                 top = valid_matches[0]
-                best_pass = Pass.objects.get(pk=top.pass_id)
-                best_reg = Registration.objects.get(pass_obj=best_pass)
-                best_score = top.score
+                try:
+                    best_pass = Pass.objects.get(pk=top.pass_id)
+                    best_reg = Registration.objects.get(pass_obj=best_pass)
+                    best_score = top.score
+                except (Pass.DoesNotExist, Registration.DoesNotExist):
+                    pass
 
-            # Save scan photo
-            scan_blob = storage.upload_photo(scan_bytes, prefix="gate_scans")
+            if not best_pass:
+                # All valid matches had missing DB records
+                return JsonResponse({
+                    "result": "NO_MATCH",
+                    "message": "No matching pass found.",
+                    "best_score": round(best_score * 100, 1),
+                })
 
             # Check if pass is blocked
             if best_pass.status == Pass.Status.BLOCKED:
@@ -330,6 +340,13 @@ def gate_verify_view(request: HttpRequest) -> JsonResponse:
 
         elif best_score >= settings.FACE_REVIEW_THRESHOLD:
             # REVIEW zone — show top 3 candidates
+            # Try to find the best pass for logging
+            try:
+                top_match = matches[0]
+                best_pass = Pass.objects.get(pk=top_match.pass_id)
+            except (Pass.DoesNotExist, IndexError):
+                best_pass = None
+
             entry = EntryLog.objects.create(
                 pass_obj=best_pass,
                 scan_photo_blob=scan_blob,
