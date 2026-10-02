@@ -134,6 +134,7 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
 
         # Extract initial_stock before serializer validation (it's not a model field)
         initial_stock = int(data.pop('initial_stock', 0) or 0)
+        initial_stock_branch_id = data.pop('initial_stock_branch', None)
 
         # Handle Category creation on the fly
         category_name = data.get('category')
@@ -160,12 +161,20 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
 
             # Create initial stock if provided
             if initial_stock > 0:
-                # Use the user's assigned branch, or fall back to the company's first branch
-                branch = getattr(request.user, 'assigned_branch', None)
+                branch = None
+                if initial_stock_branch_id:
+                    try:
+                        branch = Branch.objects.get(id=initial_stock_branch_id, company=request.user.company)
+                    except Branch.DoesNotExist:
+                        pass
+                
                 if not branch:
-                    branch = Branch.objects.filter(
-                        company=request.user.company, is_active=True
-                    ).first()
+                    # Use the user's assigned branch, or fall back to the company's first branch (alphabetical, to match POS default)
+                    branch = getattr(request.user, 'assigned_branch', None)
+                    if not branch:
+                        branch = Branch.objects.filter(
+                            company=request.user.company, is_active=True
+                        ).order_by('name').first()
 
                 if branch:
                     branch_stock, _ = BranchStock.objects.get_or_create(
