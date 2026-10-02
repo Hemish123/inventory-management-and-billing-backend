@@ -132,14 +132,31 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                         salesperson_user = CustomUser.objects.get(id=salesperson_id, company=request.user.company)
                     except CustomUser.DoesNotExist:
                         pass
+                
+                # Auto-create customer if missing
+                from apps.customers.models import Customer
+                customer_id = data.get('customer_id')
+                customer_name = data.get('customer_name', 'Walk-in Customer')
+                customer_phone = data.get('customer_phone', '')
+                
+                if customer_name and customer_name != 'Walk-in Customer' and not customer_id:
+                    customer, _ = Customer.objects.get_or_create(
+                        company=request.user.company,
+                        name=customer_name,
+                        defaults={'phone': customer_phone}
+                    )
+                    customer_id = customer.id
+                    if customer_phone and not customer.phone:
+                        customer.phone = customer_phone
+                        customer.save()
 
                 bill = Bill.objects.create(
                     company=request.user.company,
                     bill_number=bill_number,
                     branch=branch,
-                    customer_id=data.get('customer_id'),
-                    customer_name=data.get('customer_name', 'Walk-in Customer'),
-                    customer_phone=data.get('customer_phone', ''),
+                    customer_id=customer_id,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
                     status=target_status,
                     subtotal=subtotal,
                     tax_total=tax_total,
@@ -421,6 +438,28 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 grand_total = subtotal + tax_total - discount_amount + round_off
                 amount_received = Decimal(str(request.data.get('amount_received', grand_total)))
                 change_due = max(Decimal('0'), amount_received - grand_total)
+
+                # Update customer details and auto-create if missing
+                customer_id = request.data.get('customer_id')
+                customer_name = request.data.get('customer_name', bill.customer_name)
+                customer_phone = request.data.get('customer_phone', bill.customer_phone)
+                
+                if customer_name and customer_name != 'Walk-in Customer' and not customer_id:
+                    from apps.customers.models import Customer
+                    customer, _ = Customer.objects.get_or_create(
+                        company=bill.company,
+                        name=customer_name,
+                        defaults={'phone': customer_phone}
+                    )
+                    customer_id = customer.id
+                    if customer_phone and not customer.phone:
+                        customer.phone = customer_phone
+                        customer.save()
+                
+                if customer_id:
+                    bill.customer_id = customer_id
+                bill.customer_name = customer_name
+                bill.customer_phone = customer_phone
 
                 bill.subtotal = subtotal
                 bill.tax_total = tax_total

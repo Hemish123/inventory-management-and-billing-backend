@@ -14,7 +14,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     def validate_name(self, value):
         request = self.context.get('request')
         if request and request.user:
-            qs = Customer.objects.filter(name__iexact=value, msme_owner=request.user)
+            qs = Customer.objects.filter(name__iexact=value, company=request.user.company)
             if self.instance:
                 qs = qs.exclude(id=self.instance.id)
             if qs.exists():
