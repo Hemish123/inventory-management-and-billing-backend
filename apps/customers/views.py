@@ -54,10 +54,7 @@ class CustomerViewSet(TenantMixin, viewsets.ModelViewSet):
             return api_response(data=serializer.data, message='Customer updated')
         return api_error(errors=serializer.errors)
 
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        instance.delete()
-        return api_response(message='Customer deleted', status_code=status.HTTP_204_NO_CONTENT)
+
 
     @action(detail=False, methods=['get'], url_path='dropdown')
     def dropdown(self, request):

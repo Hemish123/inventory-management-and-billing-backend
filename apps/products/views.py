@@ -4,11 +4,14 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.db.models import Sum
+from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 
 from utils.response import api_response, api_error
 from .models import Category, Brand, Supplier, Product, BranchStock
+from apps.stock.models import StockMovement
+from apps.core.models import Branch
 from .serializers import (
     CategorySerializer, BrandSerializer, SupplierSerializer,
     ProductSerializer, ProductListSerializer, ProductDropdownSerializer,
@@ -125,8 +128,12 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return api_response(data=serializer.data)
 
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+
+        # Extract initial_stock before serializer validation (it's not a model field)
+        initial_stock = int(data.pop('initial_stock', 0) or 0)
 
         # Handle Category creation on the fly
         category_name = data.get('category')
@@ -149,6 +156,42 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(data=data)
         if serializer.is_valid():
             self.perform_create(serializer)
+            product = serializer.instance
+
+            # Create initial stock if provided
+            if initial_stock > 0:
+                # Use the user's assigned branch, or fall back to the company's first branch
+                branch = getattr(request.user, 'assigned_branch', None)
+                if not branch:
+                    branch = Branch.objects.filter(
+                        company=request.user.company, is_active=True
+                    ).first()
+
+                if branch:
+                    branch_stock, _ = BranchStock.objects.get_or_create(
+                        company=request.user.company,
+                        product=product,
+                        branch=branch,
+                        warehouse=None,
+                        defaults={'quantity': 0}
+                    )
+                    branch_stock.quantity += initial_stock
+                    branch_stock.save()
+
+                    StockMovement.objects.create(
+                        company=request.user.company,
+                        product=product,
+                        branch=branch,
+                        movement_type='IN',
+                        reason='INITIAL',
+                        quantity=initial_stock,
+                        balance_after=branch_stock.quantity,
+                        reference_type='product',
+                        reference_id=str(product.id),
+                        notes=f'Opening stock set during product creation',
+                        created_by=request.user,
+                    )
+
             return api_response(data=serializer.data, message='Product created',
                                 status_code=status.HTTP_201_CREATED)
         return api_error(errors=serializer.errors)

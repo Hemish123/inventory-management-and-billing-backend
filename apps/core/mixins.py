@@ -1,3 +1,7 @@
+from django.db.models import ProtectedError
+from utils.response import api_response
+
+
 class TenantMixin:
     """
     Mixin for DRF ViewSets to automatically filter querysets by the user's company
@@ -24,5 +28,22 @@ class TenantMixin:
             raise ValidationError({'detail': 'User is not associated with any company.'})
 
     def perform_destroy(self, instance):
-        """Hard delete the record from the database."""
-        instance.delete()
+        """
+        Try hard delete first. If it fails due to protected foreign keys,
+        fall back to soft delete (is_active = False) if the model supports it.
+        """
+        try:
+            instance.delete()
+        except ProtectedError:
+            if hasattr(instance, 'is_active'):
+                instance.is_active = False
+                instance.save(update_fields=['is_active'])
+            else:
+                raise
+
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to return a consistent API response."""
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return api_response(message='Deleted successfully')
+
