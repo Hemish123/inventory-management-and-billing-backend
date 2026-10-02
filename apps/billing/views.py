@@ -478,7 +478,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 send_whatsapp = request.data.get('send_whatsapp', False)
                 if send_whatsapp and getattr(bill, 'customer_phone', None):
                     try:
-                        success, msg_result = self._send_whatsapp_message(bill)
+                        success, msg_result = self._send_whatsapp_message(bill, is_update=True)
                         if not success:
                             print(f'WHATSAPP ERROR: {msg_result}')
                     except Exception as e:
@@ -532,10 +532,11 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 created_by=user,
             )
 
-    def _send_whatsapp_message(self, bill, override_phone=None):
+    def _send_whatsapp_message(self, bill, override_phone=None, is_update=False):
         import requests
         import os
         from django.conf import settings
+        from django.utils import timezone
         
         phone_number = override_phone or bill.customer_phone
         if not phone_number:
@@ -570,7 +571,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
             str(customer_name),
             str(company_name),
             str(bill.bill_number),
-            __import__('django.utils.timezone').utils.timezone.localtime(bill.billing_date).strftime('%d-%m-%Y %I:%M %p'),
+            timezone.localtime(timezone.now() if is_update else bill.billing_date).strftime('%d-%m-%Y %I:%M %p'),
             str(branch_name),
             str(cashier_name),
             str(customer_name),
