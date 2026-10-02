@@ -99,7 +99,7 @@
         formData.append('key', gateKey);
 
         try {
-            const response = await fetch('/gate/verify/', {
+            const response = await fetch('verify/', {
                 method: 'POST',
                 body: formData,
             });
@@ -238,7 +238,7 @@
             formData.append('entry_id', entryId);
             formData.append('key', gateKey);
 
-            const res = await fetch('/gate/confirm/', { method: 'POST', body: formData });
+            const res = await fetch('confirm/', { method: 'POST', body: formData });
             const data = await res.json();
 
             if (data.status === 'ok') {
@@ -260,7 +260,7 @@
             formData.append('entry_id', entryId);
             formData.append('key', gateKey);
 
-            const res = await fetch('/gate/manual-match/', { method: 'POST', body: formData });
+            const res = await fetch('manual-match/', { method: 'POST', body: formData });
             const data = await res.json();
 
             if (data.status === 'ok') {

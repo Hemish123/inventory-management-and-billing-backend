@@ -391,8 +391,8 @@ body {
 }
 
 .face-guide {
-    width: 220px;
-    height: 280px;
+    width: 280px;
+    height: 350px;
     border: 3px solid rgba(255, 255, 255, 0.3);
     border-radius: 50%;
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
@@ -650,7 +650,7 @@ body {
     }
 
     .face-guide {
-        width: 180px;
-        height: 230px;
+        width: 240px;
+        height: 300px;
     }
 }
