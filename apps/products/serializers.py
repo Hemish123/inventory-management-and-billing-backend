@@ -56,17 +56,22 @@ class ProductSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-        extra_kwargs = {'barcode': {'required': False}}
+        extra_kwargs = {
+            'barcode': {'required': False},
+            'selling_price': {'required': False},
+            'cost_price': {'required': False}
+        }
 
 
 class ProductListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for list views."""
     category_name = serializers.CharField(source='category.name', read_only=True, default='')
+    brand_name = serializers.CharField(source='brand.name', read_only=True, default='')
     total_stock = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Product
-        fields = ['id', 'sku', 'barcode', 'name', 'category_name',
+        fields = ['id', 'sku', 'barcode', 'name', 'category_name', 'brand_name',
                   'selling_price', 'cost_price', 'total_stock',
                   'minimum_stock_level', 'reorder_level', 'dead_stock_days', 'is_active']
 

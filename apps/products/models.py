@@ -60,6 +60,7 @@ class Product(models.Model):
         ('Nos', 'Numbers'), ('Kg', 'Kilograms'), ('Ltr', 'Litres'),
         ('Mtr', 'Metres'), ('Box', 'Box'), ('Pcs', 'Pieces'),
         ('Set', 'Set'), ('Pair', 'Pair'), ('Dozen', 'Dozen'),
+        ('Packets', 'Packets'), ('Cartoon', 'Cartoon'),
         ('Other', 'Other'),
     ]
 
@@ -82,14 +83,14 @@ class Product(models.Model):
 
     # Tax
     hsn_code = models.CharField(max_length=20, blank=True)
-    tax_percentage = models.IntegerField(default=18, help_text='GST %')
+    tax_percentage = models.IntegerField(default=0, help_text='GST %')
 
     # Stock (global, aggregated from BranchStock)
-    minimum_stock_level = models.IntegerField(default=10)
+    minimum_stock_level = models.IntegerField(default=0)
     reorder_level = models.IntegerField(default=5, help_text='Suggest reorder when stock falls below')
 
     # Dead stock tracking
-    dead_stock_days = models.IntegerField(default=90, help_text='Mark as dead stock if no sale in this many days')
+    dead_stock_days = models.IntegerField(default=0, help_text='Mark as dead stock if no sale in this many days')
 
     # Image
     image = models.ImageField(upload_to='product_images/', null=True, blank=True)
