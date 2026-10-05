@@ -245,7 +245,7 @@ class InventoryReportView(APIView):
 
     def get(self, request):
         branch_id = request.query_params.get('branch')
-        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch', 'product__category')
+        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch', 'product__category', 'product__brand')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -254,6 +254,7 @@ class InventoryReportView(APIView):
             'sku': bs.product.sku,
             'barcode': bs.product.barcode,
             'category': bs.product.category.name if bs.product.category else '',
+            'brand_name': bs.product.brand.name if bs.product.brand else '',
             'branch': bs.branch.name,
             'quantity': bs.quantity,
             'cost_price': float(bs.product.cost_price),
@@ -292,11 +293,12 @@ class TopProductsView(APIView):
         if branch_id:
             qs = qs.filter(bill__branch_id=branch_id)
 
-        top = qs.values('product__name', 'product__barcode').annotate(
+        top = qs.values('product__name', 'product__barcode', 'product__brand__name').annotate(
             total_qty=Sum('quantity'), total_revenue=Sum('line_total')
         ).order_by('-total_qty')[:20]
 
         data = [{'product_name': t['product__name'], 'barcode': t['product__barcode'],
+                 'brand_name': t['product__brand__name'] or '',
                  'total_quantity': float(t['total_qty'] or 0),
                  'total_revenue': float(t['total_revenue'] or 0)} for t in top]
         return api_response(data=data)
@@ -310,11 +312,12 @@ class LowStockView(APIView):
 
     def get(self, request):
         branch_id = request.query_params.get('branch')
-        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch')
+        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch', 'product__brand')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
         low = [{'product_name': bs.product.name, 'barcode': bs.product.barcode,
+                'brand_name': bs.product.brand.name if bs.product.brand else '',
                 'branch': bs.branch.name, 'current_stock': bs.quantity,
                 'minimum_level': bs.product.minimum_stock_level,
                 'reorder_level': bs.product.reorder_level,
@@ -347,10 +350,11 @@ class DeadStockView(APIView):
 
         products = Product.objects.filter(company=request.user.company, is_active=True).exclude(
             id__in=sold_product_ids
-        ).select_related('category')
+        ).select_related('category', 'brand')
 
         data = [{'product_name': p.name, 'sku': p.sku, 'barcode': p.barcode,
                  'category': p.category.name if p.category else '',
+                 'brand_name': p.brand.name if p.brand else '',
                  'selling_price': float(p.selling_price),
                  'cost_price': float(p.cost_price)} for p in products]
 
@@ -496,7 +500,7 @@ class StockValuationView(APIView):
 
     def get(self, request):
         branch_id = request.query_params.get('branch')
-        qs = BranchStock.objects.filter(company=request.user.company, quantity__gt=0).select_related('product', 'branch')
+        qs = BranchStock.objects.filter(company=request.user.company, quantity__gt=0).select_related('product', 'branch', 'product__brand')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -509,7 +513,8 @@ class StockValuationView(APIView):
             total_cost_value += cost_val
             total_retail_value += retail_val
             items.append({
-                'product_name': bs.product.name, 'branch': bs.branch.name,
+                'product_name': bs.product.name, 'brand_name': bs.product.brand.name if bs.product.brand else '',
+                'branch': bs.branch.name,
                 'quantity': bs.quantity,
                 'cost_value': float(cost_val), 'retail_value': float(retail_val),
             })
