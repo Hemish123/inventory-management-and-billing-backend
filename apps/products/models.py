@@ -87,7 +87,7 @@ class Product(models.Model):
 
     # Stock (global, aggregated from BranchStock)
     minimum_stock_level = models.IntegerField(default=0)
-    reorder_level = models.IntegerField(default=5, help_text='Suggest reorder when stock falls below')
+    reorder_level = models.IntegerField(default=0, help_text='Suggest reorder when stock falls below')
 
     # Dead stock tracking
     dead_stock_days = models.IntegerField(default=0, help_text='Mark as dead stock if no sale in this many days')
