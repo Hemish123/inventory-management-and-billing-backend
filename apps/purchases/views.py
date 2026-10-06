@@ -29,6 +29,11 @@ class PurchaseViewSet(TenantMixin, viewsets.ModelViewSet):
             qs = qs.filter(branch_id=branch_id)
         return qs
 
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return api_response(data=serializer.data)
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
@@ -121,3 +126,114 @@ class PurchaseViewSet(TenantMixin, viewsets.ModelViewSet):
             purchase.save()
 
         return api_response(message='Purchase received — stock updated')
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        purchase = self.get_object()
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        
+        if purchase.status == 'RECEIVED':
+            for item in purchase.items.select_related('product'):
+                qty = item.received_quantity
+                if qty > 0:
+                    branch_stock, _ = BranchStock.objects.get_or_create(
+                        company=purchase.company, product=item.product, branch=purchase.branch, warehouse=None,
+                        defaults={'quantity': 0}
+                    )
+                    branch_stock.quantity -= qty
+                    branch_stock.save()
+                    StockMovement.objects.create(
+                        company=purchase.company,
+                        product=item.product,
+                        branch=purchase.branch,
+                        movement_type='OUT',
+                        reason='ADJUSTMENT',
+                        quantity=-qty,
+                        balance_after=branch_stock.quantity,
+                        reference_type='purchase_update_revert',
+                        reference_id=purchase.po_number,
+                        created_by=request.user,
+                    )
+        
+        if 'branch_id' in data and 'branch' not in data:
+            data['branch'] = data['branch_id']
+            
+        serializer = self.get_serializer(purchase, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            
+            if 'items' in data:
+                purchase.items.all().delete()
+                for item in data['items']:
+                    PurchaseItem.objects.create(
+                        company=purchase.company,
+                        purchase=purchase,
+                        product_id=item.get('product'),
+                        quantity=item.get('quantity', 0),
+                        unit_cost=item.get('unit_cost', 0),
+                        received_quantity=0,
+                    )
+                
+            if purchase.status == 'RECEIVED':
+                purchase.status = 'PENDING'
+                purchase.save()
+                
+                # Re-apply receive logic inline to avoid returning early
+                for item in purchase.items.select_related('product'):
+                    qty = item.quantity
+                    if qty <= 0:
+                        continue
+                    branch_stock, _ = BranchStock.objects.get_or_create(
+                        company=purchase.company, product=item.product, branch=purchase.branch, warehouse=None,
+                        defaults={'quantity': 0}
+                    )
+                    branch_stock.quantity += qty
+                    branch_stock.save()
+                    StockMovement.objects.create(
+                        company=purchase.company,
+                        product=item.product,
+                        branch=purchase.branch,
+                        movement_type='IN',
+                        reason='PURCHASE',
+                        quantity=qty,
+                        balance_after=branch_stock.quantity,
+                        reference_type='purchase',
+                        reference_id=purchase.po_number,
+                        created_by=request.user,
+                    )
+                    item.received_quantity = item.quantity
+                    item.save()
+                purchase.status = 'RECEIVED'
+                purchase.save()
+            
+            return api_response(data=self.get_serializer(purchase).data, message='Purchase updated')
+        return api_error(errors=serializer.errors)
+
+    def destroy(self, request, *args, **kwargs):
+        purchase = self.get_object()
+        with transaction.atomic():
+            if purchase.status == 'RECEIVED':
+                for item in purchase.items.select_related('product'):
+                    qty = item.received_quantity
+                    if qty > 0:
+                        branch_stock, _ = BranchStock.objects.get_or_create(
+                            company=purchase.company, product=item.product, branch=purchase.branch, warehouse=None,
+                            defaults={'quantity': 0}
+                        )
+                        branch_stock.quantity -= qty
+                        branch_stock.save()
+
+                        StockMovement.objects.create(
+                            company=purchase.company,
+                            product=item.product,
+                            branch=purchase.branch,
+                            movement_type='OUT',
+                            reason='ADJUSTMENT',
+                            quantity=-qty,
+                            balance_after=branch_stock.quantity,
+                            reference_type='purchase_delete',
+                            reference_id=purchase.po_number,
+                            created_by=request.user,
+                        )
+            response = super().destroy(request, *args, **kwargs)
+        return response

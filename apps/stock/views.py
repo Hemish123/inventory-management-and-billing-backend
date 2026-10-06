@@ -20,7 +20,7 @@ class StockMovementViewSet(TenantMixin, viewsets.ModelViewSet):
     serializer_class = StockMovementSerializer
     search_fields = ['product__name', 'reference_id']
     ordering_fields = ['created_at']
-    http_method_names = ['get', 'post', 'head']  # No update/delete — audit trail
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete', 'head']
 
     def get_queryset(self):
         qs = super().get_queryset().select_related('product', 'branch', 'created_by')
@@ -43,6 +43,43 @@ class StockMovementViewSet(TenantMixin, viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
         return api_response(data=serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        movement = self.get_object()
+        data = request.data
+        quantity = int(data.get('quantity', movement.quantity))
+        
+        with transaction.atomic():
+            if quantity != movement.quantity:
+                diff = quantity - movement.quantity
+                branch_stock, _ = BranchStock.objects.get_or_create(
+                    company=movement.company, product=movement.product, branch=movement.branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                branch_stock.quantity += diff
+                branch_stock.save()
+                
+                movement.quantity = quantity
+                movement.balance_after = branch_stock.quantity
+                movement.save()
+                
+            serializer = self.get_serializer(movement, data=data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return api_response(data=serializer.data, message='Stock movement updated')
+            return api_error(errors=serializer.errors)
+
+    def destroy(self, request, *args, **kwargs):
+        movement = self.get_object()
+        with transaction.atomic():
+            branch_stock, _ = BranchStock.objects.get_or_create(
+                company=movement.company, product=movement.product, branch=movement.branch, warehouse=None,
+                defaults={'quantity': 0}
+            )
+            branch_stock.quantity -= movement.quantity
+            branch_stock.save()
+            movement.delete()
+        return api_response(message='Stock movement deleted and stock reverted')
 
     @action(detail=False, methods=['post'], url_path='adjust')
     def manual_adjustment(self, request):

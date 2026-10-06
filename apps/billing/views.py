@@ -353,6 +353,35 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
 
         return api_response(message='Bill voided and stock restored')
 
+    def destroy(self, request, *args, **kwargs):
+        bill = self.get_object()
+        
+        with transaction.atomic():
+            if bill.status == 'COMPLETED':
+                for item in bill.items.all():
+                    qty = int(item.quantity)
+                    branch_stock, _ = BranchStock.objects.get_or_create(
+                        company=bill.company, product=item.product, branch=bill.branch, warehouse=None,
+                        defaults={'quantity': 0}
+                    )
+                    branch_stock.quantity += qty
+                    branch_stock.save()
+
+                    StockMovement.objects.create(
+                        company=bill.company,
+                        product=item.product,
+                        branch=bill.branch,
+                        movement_type='IN',
+                        reason='RETURN',
+                        quantity=qty,
+                        balance_after=branch_stock.quantity,
+                        reference_type='bill_delete',
+                        reference_id=bill.bill_number,
+                        created_by=request.user,
+                    )
+            response = super().destroy(request, *args, **kwargs)
+        return response
+
     # ──────────────────────────────────────────────────────────────
     # Update a completed bill (partial return / item changes)
     # ──────────────────────────────────────────────────────────────
