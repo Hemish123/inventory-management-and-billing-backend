@@ -150,7 +150,7 @@ class PurchaseViewSet(TenantMixin, viewsets.ModelViewSet):
                         reason='ADJUSTMENT',
                         quantity=-qty,
                         balance_after=branch_stock.quantity,
-                        reference_type='purchase_update_revert',
+                        reference_type='purchase_revert',
                         reference_id=purchase.po_number,
                         created_by=request.user,
                     )
