@@ -25,7 +25,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 class CustomerListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
-        fields = ['id', 'name', 'phone', 'email', 'company', 'gstin', 'is_active', 'created_at']
+        fields = ['id', 'name', 'phone', 'email', 'company', 'gstin', 'address', 'is_active', 'created_at']
 
 
 class CustomerDropdownSerializer(serializers.ModelSerializer):

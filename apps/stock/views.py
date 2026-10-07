@@ -33,6 +33,10 @@ class StockMovementViewSet(TenantMixin, viewsets.ModelViewSet):
         reason = self.request.query_params.get('reason')
         if reason:
             qs = qs.filter(reason=reason)
+            
+        if self.request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(created_by=self.request.user)
+            
         return qs
 
     def list(self, request, *args, **kwargs):
@@ -135,6 +139,10 @@ class StockTransferViewSet(TenantMixin, viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
+            
+        if self.request.user.role_name == 'EMPLOYEE':
+            qs = qs.filter(created_by=self.request.user)
+            
         return qs
 
     def list(self, request, *args, **kwargs):

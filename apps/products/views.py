@@ -154,6 +154,15 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
             )
             data['brand'] = brand.id
 
+        # Handle Supplier creation on the fly
+        supplier_name = data.get('supplier')
+        if supplier_name and not str(supplier_name).isdigit():
+            supplier, _ = Supplier.objects.get_or_create(
+                name=supplier_name, company=request.user.company,
+                defaults={'contact_person': '', 'phone': '', 'email': '', 'address': '', 'gstin': ''}
+            )
+            data['supplier'] = supplier.id
+
         serializer = self.get_serializer(data=data)
         if serializer.is_valid():
             self.perform_create(serializer)
@@ -226,7 +235,15 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
             )
             data['brand'] = brand.id
 
-        serializer = self.get_serializer(instance, data=data, partial=partial)
+        supplier_name = data.get('supplier')
+        if supplier_name and not str(supplier_name).isdigit():
+            supplier, _ = Supplier.objects.get_or_create(
+                name=supplier_name, company=request.user.company,
+                defaults={'contact_person': '', 'phone': '', 'email': '', 'address': '', 'gstin': ''}
+            )
+            data['supplier'] = supplier.id
+
+        serializer = self.get_serializer(instance, data=data, partial=True)
         if serializer.is_valid():
             self.perform_update(serializer)
             return api_response(data=serializer.data, message='Product updated')
