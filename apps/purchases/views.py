@@ -7,8 +7,8 @@ from django.db import transaction
 from utils.response import api_response, api_error
 from apps.products.models import BranchStock
 from apps.stock.models import StockMovement
-from .models import Purchase, PurchaseItem
-from .serializers import PurchaseSerializer, PurchaseListSerializer
+from .models import Purchase, PurchaseItem, Expense
+from .serializers import PurchaseSerializer, PurchaseListSerializer, ExpenseSerializer
 
 
 class PurchaseViewSet(TenantMixin, viewsets.ModelViewSet):
@@ -237,3 +237,59 @@ class PurchaseViewSet(TenantMixin, viewsets.ModelViewSet):
                         )
             response = super().destroy(request, *args, **kwargs)
         return response
+
+class ExpenseViewSet(TenantMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    queryset = Expense.objects.all()
+    serializer_class = ExpenseSerializer
+    search_fields = ['bill_no', 'expense_type', 'supplier__name']
+    ordering_fields = ['date', 'created_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('supplier', 'branch', 'created_by')
+        branch_id = self.request.query_params.get('branch')
+        if branch_id:
+            qs = qs.filter(branch_id=branch_id)
+        return qs
+
+    def perform_create(self, serializer):
+        data = self.request.data.copy() if hasattr(self.request.data, 'copy') else dict(self.request.data)
+        if 'branch_id' in data and 'branch' not in data:
+            serializer.save(company=self.request.user.company, created_by=self.request.user, branch_id=data['branch_id'])
+        else:
+            serializer.save(company=self.request.user.company, created_by=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return api_response(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return api_response(data=serializer.data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            self.perform_create(serializer)
+            return api_response(data=serializer.data, message='Expense added', status_code=status.HTTP_201_CREATED)
+        return api_error(errors=serializer.errors)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            self.perform_update(serializer)
+            return api_response(data=serializer.data, message='Expense updated')
+        return api_error(errors=serializer.errors)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return api_response(message='Expense deleted successfully')

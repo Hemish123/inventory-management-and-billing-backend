@@ -34,7 +34,7 @@ class StockMovementViewSet(TenantMixin, viewsets.ModelViewSet):
         if reason:
             qs = qs.filter(reason=reason)
             
-        if self.request.user.role_name == 'EMPLOYEE':
+        if self.request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(created_by=self.request.user)
             
         return qs
@@ -140,7 +140,7 @@ class StockTransferViewSet(TenantMixin, viewsets.ModelViewSet):
         if status_filter:
             qs = qs.filter(status=status_filter)
             
-        if self.request.user.role_name == 'EMPLOYEE':
+        if self.request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(created_by=self.request.user)
             
         return qs

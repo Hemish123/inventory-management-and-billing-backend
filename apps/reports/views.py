@@ -54,7 +54,7 @@ class DashboardStatsView(APIView):
         month_start = today.replace(day=1)
 
         bills_qs = Bill.objects.filter(company=request.user.company, status='COMPLETED')
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             bills_qs = bills_qs.filter(cashier=request.user)
         if branch_id:
             bills_qs = bills_qs.filter(branch_id=branch_id)
@@ -78,7 +78,7 @@ class DashboardStatsView(APIView):
         )
 
         pending_purchases_qs = Purchase.objects.filter(company=request.user.company, status__in=['DRAFT', 'ORDERED', 'PARTIAL'])
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             pending_purchases_qs = pending_purchases_qs.filter(created_by=request.user)
         pending_purchases = pending_purchases_qs.count()
 
@@ -111,7 +111,7 @@ class SalesReportView(APIView):
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
         )
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(cashier=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
@@ -168,8 +168,22 @@ class SalesReportView(APIView):
 
         # Export support
         if request.query_params.get('export') == 'csv':
-            rows = [[d['date'], d['revenue'], d['tax'], d['discount'], d['bills']] for d in data['daily']]
-            return _csv_response(rows, ['Date', 'Revenue', 'Tax', 'Discount', 'Bills'], 'sales_report.csv')
+            bills = qs.select_related('branch', 'salesperson').order_by('billing_date')
+            rows = []
+            for b in bills:
+                sp_name = "Self (Default)"
+                if b.salesperson:
+                    sp_name = f"{b.salesperson.first_name} {b.salesperson.last_name}".strip() or b.salesperson.username
+                rows.append([
+                    b.billing_date.date().isoformat(),
+                    b.bill_number,
+                    b.branch.name if b.branch else '',
+                    sp_name,
+                    float(b.grand_total),
+                    float(b.tax_total),
+                    float(b.discount_amount)
+                ])
+            return _csv_response(rows, ['Date', 'Bill Number', 'Branch', 'Sales Person', 'Revenue', 'Tax', 'Discount'], 'sales_report.csv')
 
         return api_response(data=data)
 
@@ -183,7 +197,7 @@ class SalesTrendView(APIView):
         thirty_days_ago = timezone.now().date() - timedelta(days=30)
 
         qs = Bill.objects.filter(company=request.user.company, status='COMPLETED', billing_date__date__gte=thirty_days_ago)
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(cashier=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
@@ -207,7 +221,7 @@ class PurchaseReportView(APIView):
         branch_id = request.query_params.get('branch')
 
         qs = Purchase.objects.filter(company=request.user.company, purchase_date__gte=start_date, purchase_date__lte=end_date)
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(created_by=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
@@ -245,7 +259,7 @@ class InventoryReportView(APIView):
 
     def get(self, request):
         branch_id = request.query_params.get('branch')
-        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch', 'product__category', 'product__brand')
+        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch', 'product__category', 'product__brand', 'product__supplier')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -255,6 +269,7 @@ class InventoryReportView(APIView):
             'barcode': bs.product.barcode,
             'category': bs.product.category.name if bs.product.category else '',
             'brand_name': bs.product.brand.name if bs.product.brand else '',
+            'supplier_name': bs.product.supplier.name if bs.product.supplier else '',
             'branch': bs.branch.name,
             'quantity': bs.quantity,
             'cost_price': float(bs.product.cost_price),
@@ -265,9 +280,9 @@ class InventoryReportView(APIView):
         } for bs in qs]
 
         if request.query_params.get('export') == 'csv':
-            rows = [[d['product_name'], d['sku'], d['barcode'], d['branch'],
+            rows = [[d['product_name'], d['sku'], d['barcode'], d['category'], d['brand_name'], d['supplier_name'], d['branch'],
                       d['quantity'], d['cost_price'], d['stock_value']] for d in data]
-            return _csv_response(rows, ['Product', 'SKU', 'Barcode', 'Branch', 'Qty', 'Cost', 'Value'], 'inventory_report.csv')
+            return _csv_response(rows, ['Product', 'SKU', 'Barcode', 'Category', 'Brand', 'Supplier', 'Branch', 'Qty', 'Cost', 'Value'], 'inventory_report.csv')
 
         return api_response(data=data)
 
@@ -288,7 +303,7 @@ class TopProductsView(APIView):
             bill__billing_date__date__gte=start_date,
             bill__billing_date__date__lte=end_date,
         )
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(bill__cashier=request.user)
         if branch_id:
             qs = qs.filter(bill__branch_id=branch_id)
@@ -376,7 +391,7 @@ class BranchSalesReportView(APIView):
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
         )
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(cashier=request.user)
 
         branch_data = qs.values('branch__name', 'branch__code').annotate(
@@ -403,7 +418,7 @@ class SupplierPurchaseReportView(APIView):
         start_date, end_date = _parse_dates(request)
 
         qs = Purchase.objects.filter(company=request.user.company, purchase_date__gte=start_date, purchase_date__lte=end_date)
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(created_by=request.user)
 
         supplier_data = qs.values('supplier__name').annotate(
@@ -434,7 +449,7 @@ class CustomerPurchaseReportView(APIView):
             billing_date__date__lte=end_date,
             customer__isnull=False,
         )
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(cashier=request.user)
 
         customer_data = qs.values('customer__name', 'customer__phone').annotate(
@@ -468,7 +483,7 @@ class ProfitReportView(APIView):
             bill__billing_date__date__gte=start_date,
             bill__billing_date__date__lte=end_date,
         )
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(bill__cashier=request.user)
         if branch_id:
             qs = qs.filter(bill__branch_id=branch_id)
@@ -543,7 +558,7 @@ class EmployeeSalesReportView(APIView):
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
         )
-        if request.user.role_name == 'EMPLOYEE':
+        if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(cashier=request.user)
         if branch_id:
             qs = qs.filter(branch_id=branch_id)

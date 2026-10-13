@@ -54,3 +54,24 @@ class PurchaseItem(models.Model):
 
     def __str__(self):
         return f"{self.product.name} x {self.quantity}"
+
+class Expense(models.Model):
+    company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='expenses')
+    branch = models.ForeignKey('core.Branch', on_delete=models.PROTECT, related_name='expenses')
+    supplier = models.ForeignKey('products.Supplier', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    bill_no = models.CharField(max_length=100)
+    expense_rate = models.DecimalField(max_digits=14, decimal_places=2)
+    expense_type = models.CharField(max_length=100)
+    date = models.DateField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='expenses_created'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Expense {self.bill_no} - {self.expense_type}"

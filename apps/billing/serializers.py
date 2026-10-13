@@ -93,10 +93,11 @@ class BillCreateSerializer(serializers.Serializer):
 class BillListSerializer(serializers.ModelSerializer):
     cashier_name = serializers.CharField(source='cashier.email', read_only=True, default='')
     branch_name = serializers.CharField(source='branch.name', read_only=True, default='')
+    payments = BillPaymentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Bill
         fields = ['id', 'bill_number', 'branch_name', 'customer_name',
                   'customer_phone',
                   'billing_date', 'grand_total', 'payment_method', 'status',
-                  'cashier_name']
+                  'cashier_name', 'payments']

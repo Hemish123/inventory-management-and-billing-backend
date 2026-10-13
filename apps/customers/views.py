@@ -18,8 +18,6 @@ class CustomerViewSet(TenantMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.request.user.role_name == 'EMPLOYEE':
-            qs = qs.filter(created_by=self.request.user)
         return qs
 
     def get_serializer_class(self):
@@ -69,8 +67,6 @@ class CustomerViewSet(TenantMixin, viewsets.ModelViewSet):
     def dropdown(self, request):
         """Lightweight list for billing customer dropdowns — no pagination."""
         qs = Customer.objects.filter(company=request.user.company, is_active=True)
-        if request.user.role_name == 'EMPLOYEE':
-            qs = qs.filter(created_by=request.user)
             
         customers = qs.order_by('name')
         serializer = CustomerDropdownSerializer(customers, many=True)

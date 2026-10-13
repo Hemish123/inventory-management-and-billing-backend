@@ -39,7 +39,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         if phone:
             qs = qs.filter(customer_phone__icontains=phone)
             
-        if self.request.user.role_name == 'EMPLOYEE':
+        if self.request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(cashier=self.request.user)
             
         return qs
@@ -594,31 +594,78 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         items_lines = []
         for item in bill.items.all():
             items_lines.append(f"{item.product_name}    {item.quantity:.2f} x {item.unit_price:.2f}    {item.line_total:.2f}")
+            # Show per-item discount if any
+            item_disc = float(getattr(item, 'discount_amount', 0) or 0)
+            if item_disc > 0:
+                disc_type = getattr(item, 'discount_type', 'FIXED')
+                disc_pct = float(getattr(item, 'discount_percentage', 0) or 0)
+                if disc_type == 'PERCENTAGE' and disc_pct > 0:
+                    items_lines.append(f"   Disc ({disc_pct:.0f}%): -{item_disc:.2f}")
+                else:
+                    items_lines.append(f"   Disc: -{item_disc:.2f}")
         items_str = "\n".join(items_lines)
         
+        # Build overall discount string
+        bill_disc_amt = float(getattr(bill, 'discount_amount', 0) or 0)
+        bill_disc_type = getattr(bill, 'discount_type', 'NONE')
+        bill_disc_pct = float(getattr(bill, 'discount_percentage', 0) or 0)
+        if bill_disc_amt > 0:
+            if bill_disc_type == 'PERCENTAGE' and bill_disc_pct > 0:
+                discount_str = f"-{bill_disc_amt:.2f} ({bill_disc_pct:.0f}%)"
+            else:
+                discount_str = f"-{bill_disc_amt:.2f}"
+        else:
+            discount_str = "0.00"
+        
+        # Calculate total savings (overall + item-level discounts)
+        total_saved = bill_disc_amt
+        for item in bill.items.all():
+            total_saved += float(getattr(item, 'discount_amount', 0) or 0)
+        you_saved_str = f"₹{total_saved:.2f}" if total_saved > 0 else "₹0.00"
+        
+        # Template variables — positions must match Meta template
+        # {{1}}  = customer_name (greeting)
+        # {{2}}  = company_name
+        # {{3}}  = bill_number
+        # {{4}}  = date
+        # {{5}}  = branch_name
+        # {{6}}  = cashier_name
+        # {{7}}  = customer_name
+        # {{8}}  = phone_number
+        # {{9}}  = items_str
+        # {{10}} = subtotal
+        # {{11}} = discount
+        # {{12}} = tax (GST)
+        # {{13}} = round_off
+        # {{14}} = grand_total
+        # {{15}} = you_saved
+        # {{16}} = payment_method
         variables = [
-            str(customer_name),
-            str(company_name),
-            str(bill.bill_number),
-            timezone.localtime(timezone.now() if is_update else bill.billing_date).strftime('%d-%m-%Y %I:%M %p'),
-            str(branch_name),
-            str(cashier_name),
-            str(customer_name),
-            str(phone_number),
-            str(items_str) if items_str else "-",
-            f"{bill.subtotal:.2f}",
-            f"{bill.tax_total:.2f}",
-            f"{bill.round_off:+.2f}",
-            f"{bill.grand_total:.2f}",
-            str(bill.get_payment_method_display())
+            str(customer_name),                   # {{1}}
+            str(company_name),                    # {{2}}
+            str(bill.bill_number),                # {{3}}
+            timezone.localtime(timezone.now() if is_update else bill.billing_date).strftime('%d-%m-%Y %I:%M %p'),  # {{4}}
+            str(branch_name),                     # {{5}}
+            str(cashier_name),                    # {{6}}
+            str(customer_name),                   # {{7}}
+            str(phone_number),                    # {{8}}
+            str(items_str) if items_str else "-",  # {{9}}
+            f"{bill.subtotal:.2f}",               # {{10}}
+            str(discount_str),                    # {{11}} — NEW: discount
+            f"{bill.tax_total:.2f}",              # {{12}}
+            f"{bill.round_off:+.2f}",             # {{13}}
+            f"{bill.grand_total:.2f}",            # {{14}}
+            str(you_saved_str),                   # {{15}} — NEW: you saved
+            str(bill.get_payment_method_display()) # {{16}}
         ]
         
+        template_name = os.environ.get('META_WHATSAPP_TEMPLATE_NAME', 'bill_receipt')
         data = {
             "messaging_product": "whatsapp",
             "to": phone_number,
             "type": "template",
             "template": {
-                "name": "bill_invoice_receipt",
+                "name": template_name,
                 "language": {
                     "code": "en"
                 },

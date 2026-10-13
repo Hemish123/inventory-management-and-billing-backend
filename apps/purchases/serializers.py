@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Purchase, PurchaseItem
+from .models import Purchase, PurchaseItem, Expense
 
 
 class PurchaseItemSerializer(serializers.ModelSerializer):
@@ -36,3 +36,15 @@ class PurchaseListSerializer(serializers.ModelSerializer):
         fields = ['id', 'po_number', 'branch_name', 'supplier_name',
                   'purchase_date', 'invoice_number', 'status', 'total_amount',
                   'gst_amount']
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+
+    class Meta:
+        model = Expense
+        fields = ['id', 'branch', 'branch_name', 'supplier', 'supplier_name',
+                  'bill_no', 'expense_rate', 'expense_type', 'date',
+                  'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
+
