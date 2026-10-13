@@ -588,6 +588,8 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         
         customer_name = bill.customer_name or "Walk-in Customer"
         company_name = getattr(bill.company, 'name', 'Our Store')
+        if company_name and company_name.isupper():
+            company_name = company_name.title()
         branch_name = getattr(bill.branch, 'name', bill.branch.code if getattr(bill, 'branch', None) else 'Store')
         cashier_name = bill.cashier.get_full_name() if getattr(bill, 'cashier', None) and bill.cashier.get_full_name() else getattr(bill.cashier, 'username', 'Cashier')
         

@@ -60,12 +60,17 @@ def generate_bill_pdf(bill):
     content_w = CONTENT_WIDTH_MM * mm  # usable width in points
 
     # ── Paragraph styles (small fonts for thermal receipt) ──────
+    company_name = bill.company.name if bill.company else getattr(settings, 'COMPANY_NAME', 'Retail Store')
+    name_len = len(company_name or '')
+    shop_font_size = 7 if name_len > 25 else (7.5 if name_len > 15 else 8)
+    shop_leading = shop_font_size + 2
+
     shop_name_style = ParagraphStyle(
         'ShopName',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=9,
-        leading=11,
+        fontSize=shop_font_size,
+        leading=shop_leading,
         alignment=1,  # Center
         spaceAfter=1,
         wordWrap='CJK',  # Force character-level wrapping for long names
