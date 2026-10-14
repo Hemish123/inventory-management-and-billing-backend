@@ -59,7 +59,7 @@ class Expense(models.Model):
     company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='expenses')
     branch = models.ForeignKey('core.Branch', on_delete=models.PROTECT, related_name='expenses')
     supplier = models.ForeignKey('products.Supplier', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
-    bill_no = models.CharField(max_length=100)
+    bill_no = models.CharField(max_length=100, blank=True, default='')
     expense_rate = models.DecimalField(max_digits=14, decimal_places=2)
     expense_type = models.CharField(max_length=100)
     date = models.DateField(auto_now_add=True)

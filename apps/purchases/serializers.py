@@ -40,6 +40,7 @@ class PurchaseListSerializer(serializers.ModelSerializer):
 class ExpenseSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    bill_no = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
 
     class Meta:
         model = Expense

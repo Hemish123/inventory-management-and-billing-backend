@@ -47,5 +47,6 @@ class StockTransferCreateSerializer(serializers.Serializer):
     """Create a stock transfer with items."""
     from_branch = serializers.IntegerField()
     to_branch = serializers.IntegerField()
+    status = serializers.CharField(required=False, default='REQUESTED')
     notes = serializers.CharField(required=False, allow_blank=True, default='')
     items = StockTransferItemSerializer(many=True)

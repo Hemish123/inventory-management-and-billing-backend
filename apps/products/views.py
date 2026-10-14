@@ -102,10 +102,19 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
         return ProductSerializer
 
     def get_queryset(self):
+        from django.db.models import Prefetch
         qs = super().get_queryset().filter(is_active=True).select_related(
             'category', 'brand', 'supplier'
         ).annotate(
             total_stock=Sum('branch_stocks__quantity')
+        ).prefetch_related(
+            Prefetch(
+                'stock_movements',
+                queryset=StockMovement.objects.filter(reason='INITIAL').select_related('branch').order_by('created_at'),
+                to_attr='initial_movements'
+            ),
+            'branch_stocks__branch',
+            'branch_stocks__warehouse',
         )
         category = self.request.query_params.get('category')
         if category:
@@ -168,31 +177,31 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
             self.perform_create(serializer)
             product = serializer.instance
 
-            # Create initial stock if provided
-            if initial_stock > 0:
-                branch = None
-                if initial_stock_branch_id:
-                    try:
-                        branch = Branch.objects.get(id=initial_stock_branch_id, company=request.user.company)
-                    except Branch.DoesNotExist:
-                        pass
-                
+            # Create initial stock if provided or link initial branch
+            branch = None
+            if initial_stock_branch_id:
+                try:
+                    branch = Branch.objects.get(id=initial_stock_branch_id, company=request.user.company)
+                except Branch.DoesNotExist:
+                    pass
+            
+            if not branch:
+                # Use the user's assigned branch, or fall back to the company's first branch (alphabetical, to match POS default)
+                branch = getattr(request.user, 'assigned_branch', None)
                 if not branch:
-                    # Use the user's assigned branch, or fall back to the company's first branch (alphabetical, to match POS default)
-                    branch = getattr(request.user, 'assigned_branch', None)
-                    if not branch:
-                        branch = Branch.objects.filter(
-                            company=request.user.company, is_active=True
-                        ).order_by('name').first()
+                    branch = Branch.objects.filter(
+                        company=request.user.company, is_active=True
+                    ).order_by('name').first()
 
-                if branch:
-                    branch_stock, _ = BranchStock.objects.get_or_create(
-                        company=request.user.company,
-                        product=product,
-                        branch=branch,
-                        warehouse=None,
-                        defaults={'quantity': 0}
-                    )
+            if branch:
+                branch_stock, _ = BranchStock.objects.get_or_create(
+                    company=request.user.company,
+                    product=product,
+                    branch=branch,
+                    warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                if initial_stock > 0:
                     branch_stock.quantity += initial_stock
                     branch_stock.save()
 
@@ -209,15 +218,38 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
                         notes=f'Opening stock set during product creation',
                         created_by=request.user,
                     )
+                else:
+                    StockMovement.objects.create(
+                        company=request.user.company,
+                        product=product,
+                        branch=branch,
+                        movement_type='IN',
+                        reason='INITIAL',
+                        quantity=0,
+                        balance_after=branch_stock.quantity,
+                        reference_type='product',
+                        reference_id=str(product.id),
+                        notes='Product initialized at branch with 0 opening stock',
+                        created_by=request.user,
+                    )
 
-            return api_response(data=serializer.data, message='Product created',
+            product.refresh_from_db()
+            return api_response(data=ProductSerializer(product).data, message='Product created',
                                 status_code=status.HTTP_201_CREATED)
         return api_error(errors=serializer.errors)
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+
+        # Check if initial stock / branch is provided in update
+        has_initial_stock = 'initial_stock' in data
+        has_stock_branch = 'initial_stock_branch' in data
+
+        raw_initial_stock = data.pop('initial_stock', None) if has_initial_stock else None
+        raw_stock_branch_id = data.pop('initial_stock_branch', None) if has_stock_branch else None
 
         category_name = data.get('category')
         if category_name and not str(category_name).isdigit():
@@ -246,7 +278,190 @@ class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=data, partial=True)
         if serializer.is_valid():
             self.perform_update(serializer)
-            return api_response(data=serializer.data, message='Product updated')
+
+            # Handle Initial Stock & Branch updates and stock adjustment
+            if has_initial_stock or has_stock_branch:
+                # 1. Determine existing initial state
+                initial_movement = StockMovement.objects.filter(
+                    product=instance,
+                    company=request.user.company,
+                    reason='INITIAL'
+                ).order_by('created_at').first()
+
+                existing_bs = BranchStock.objects.filter(
+                    product=instance,
+                    company=request.user.company
+                ).order_by('-quantity').first()
+
+                if initial_movement:
+                    old_initial_stock = initial_movement.quantity
+                    old_branch = initial_movement.branch
+                elif not instance.stock_movements.filter(company=request.user.company).exists() and existing_bs:
+                    old_initial_stock = existing_bs.quantity
+                    old_branch = existing_bs.branch
+                else:
+                    old_initial_stock = 0
+                    old_branch = existing_bs.branch if existing_bs else None
+
+                # 2. Determine target branch
+                new_branch = None
+                if raw_stock_branch_id:
+                    try:
+                        new_branch = Branch.objects.get(id=raw_stock_branch_id, company=request.user.company)
+                    except Branch.DoesNotExist:
+                        pass
+
+                if not new_branch:
+                    new_branch = old_branch or getattr(request.user, 'assigned_branch', None)
+                    if not new_branch:
+                        new_branch = Branch.objects.filter(
+                            company=request.user.company, is_active=True
+                        ).order_by('name').first()
+
+                if not old_branch:
+                    old_branch = new_branch
+
+                # 3. Determine target initial stock
+                if has_initial_stock:
+                    try:
+                        new_initial_stock = int(raw_initial_stock or 0)
+                    except (ValueError, TypeError):
+                        new_initial_stock = 0
+                    new_initial_stock = max(0, new_initial_stock)
+                else:
+                    new_initial_stock = old_initial_stock
+
+                # 4. Perform stock adjustment based on changes
+                if old_branch.id == new_branch.id:
+                    # Same branch: adjust stock difference
+                    diff = new_initial_stock - old_initial_stock
+                    if diff != 0:
+                        branch_stock, _ = BranchStock.objects.get_or_create(
+                            company=request.user.company,
+                            product=instance,
+                            branch=new_branch,
+                            warehouse=None,
+                            defaults={'quantity': 0}
+                        )
+                        branch_stock.quantity += diff
+                        branch_stock.save()
+
+                        StockMovement.objects.create(
+                            company=request.user.company,
+                            product=instance,
+                            branch=new_branch,
+                            movement_type='IN' if diff > 0 else 'OUT',
+                            reason='STOCK_COUNT',
+                            quantity=diff,
+                            balance_after=branch_stock.quantity,
+                            reference_type='product_edit',
+                            reference_id=str(instance.id),
+                            notes=f'Opening stock adjusted from {old_initial_stock} to {new_initial_stock}',
+                            created_by=request.user,
+                        )
+
+                    if initial_movement:
+                        initial_movement.quantity = new_initial_stock
+                        initial_movement.branch = new_branch
+                        initial_movement.save()
+                    else:
+                        bs = BranchStock.objects.filter(
+                            company=request.user.company,
+                            product=instance,
+                            branch=new_branch,
+                            warehouse=None
+                        ).first()
+                        balance = bs.quantity if bs else new_initial_stock
+                        StockMovement.objects.create(
+                            company=request.user.company,
+                            product=instance,
+                            branch=new_branch,
+                            movement_type='IN',
+                            reason='INITIAL',
+                            quantity=new_initial_stock,
+                            balance_after=balance,
+                            reference_type='product',
+                            reference_id=str(instance.id),
+                            notes='Opening stock set during product edit',
+                            created_by=request.user,
+                        )
+                else:
+                    # Branch changed from old_branch to new_branch!
+                    # A. Deduct old initial stock from old branch
+                    if old_initial_stock > 0:
+                        old_branch_stock, _ = BranchStock.objects.get_or_create(
+                            company=request.user.company,
+                            product=instance,
+                            branch=old_branch,
+                            warehouse=None,
+                            defaults={'quantity': 0}
+                        )
+                        old_branch_stock.quantity -= old_initial_stock
+                        old_branch_stock.save()
+
+                        StockMovement.objects.create(
+                            company=request.user.company,
+                            product=instance,
+                            branch=old_branch,
+                            movement_type='OUT',
+                            reason='TRANSFER',
+                            quantity=-old_initial_stock,
+                            balance_after=old_branch_stock.quantity,
+                            reference_type='product_edit',
+                            reference_id=str(instance.id),
+                            notes=f'Initial stock moved to branch {new_branch.name}',
+                            created_by=request.user,
+                        )
+
+                    # B. Add new initial stock to new branch
+                    new_branch_stock, _ = BranchStock.objects.get_or_create(
+                        company=request.user.company,
+                        product=instance,
+                        branch=new_branch,
+                        warehouse=None,
+                        defaults={'quantity': 0}
+                    )
+                    new_branch_stock.quantity += new_initial_stock
+                    new_branch_stock.save()
+
+                    if new_initial_stock > 0:
+                        StockMovement.objects.create(
+                            company=request.user.company,
+                            product=instance,
+                            branch=new_branch,
+                            movement_type='IN',
+                            reason='TRANSFER' if old_initial_stock > 0 else 'INITIAL',
+                            quantity=new_initial_stock,
+                            balance_after=new_branch_stock.quantity,
+                            reference_type='product_edit',
+                            reference_id=str(instance.id),
+                            notes=f'Initial stock moved from branch {old_branch.name} and set to {new_initial_stock}',
+                            created_by=request.user,
+                        )
+
+                    # C. Update or create INITIAL movement
+                    if initial_movement:
+                        initial_movement.branch = new_branch
+                        initial_movement.quantity = new_initial_stock
+                        initial_movement.balance_after = new_branch_stock.quantity
+                        initial_movement.save()
+                    else:
+                        StockMovement.objects.create(
+                            company=request.user.company,
+                            product=instance,
+                            branch=new_branch,
+                            movement_type='IN',
+                            reason='INITIAL',
+                            quantity=new_initial_stock,
+                            balance_after=new_branch_stock.quantity,
+                            reference_type='product',
+                            reference_id=str(instance.id),
+                            notes='Opening stock set during product edit',
+                            created_by=request.user,
+                        )
+
+            instance.refresh_from_db()
+            return api_response(data=ProductSerializer(instance).data, message='Product updated')
         return api_error(errors=serializer.errors)
 
     @action(detail=False, methods=['get'], url_path='dropdown')

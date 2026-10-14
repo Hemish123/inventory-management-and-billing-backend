@@ -6,7 +6,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from utils.response import api_response, api_error
-from apps.products.models import BranchStock
+from apps.products.models import BranchStock, Product
+from apps.core.models import Branch
 from .models import StockMovement, StockTransfer, StockTransferItem
 from .serializers import (
     StockMovementSerializer, StockTransferSerializer,
@@ -131,6 +132,7 @@ class StockTransferViewSet(TenantMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = StockTransfer.objects.all()
     serializer_class = StockTransferSerializer
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete', 'head']
 
     def get_queryset(self):
         qs = super().get_queryset().select_related(
@@ -154,56 +156,294 @@ class StockTransferViewSet(TenantMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return api_response(data=serializer.data)
 
-    @action(detail=False, methods=['post'], url_path='create-transfer')
-    def create_transfer(self, request):
-        """Create a new stock transfer with items."""
-        ser = StockTransferCreateSerializer(data=request.data)
-        if not ser.is_valid():
-            return api_error(errors=ser.errors)
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create a new stock transfer with items, supporting any initial status."""
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        
+        from_branch_id = data.get('from_branch')
+        to_branch_id = data.get('to_branch')
+        notes = data.get('notes', '')
+        target_status = data.get('status', 'REQUESTED')
+        items_data = data.get('items', [])
 
-        data = ser.validated_data
-        if data['from_branch'] == data['to_branch']:
+        try:
+            from_branch_id = int(from_branch_id)
+            to_branch_id = int(to_branch_id)
+        except (ValueError, TypeError):
+            return api_error(message='from_branch and to_branch are required and must be valid branch IDs')
+
+        if from_branch_id == to_branch_id:
             return api_error(message='Source and destination branches must be different')
 
-        # Validate stock availability
-        from apps.products.models import BranchStock
-        for item_data in data['items']:
-            product = item_data['product']
-            qty = item_data['quantity']
-            src_stock = BranchStock.objects.filter(
+        try:
+            from_branch = Branch.objects.get(id=from_branch_id, company=request.user.company)
+            to_branch = Branch.objects.get(id=to_branch_id, company=request.user.company)
+        except Branch.DoesNotExist:
+            return api_error(message='Selected branch does not exist')
+
+        if not isinstance(items_data, list) or len(items_data) == 0:
+            return api_error(message='At least one product item is required')
+
+        # Validate items
+        validated_items = []
+        for it in items_data:
+            prod_id = it.get('product')
+            if isinstance(prod_id, dict):
+                prod_id = prod_id.get('id')
+            try:
+                product = Product.objects.get(id=prod_id, company=request.user.company)
+            except Product.DoesNotExist:
+                return api_error(message=f'Product ID {prod_id} not found')
+
+            try:
+                qty = int(it.get('quantity', 1))
+            except (ValueError, TypeError):
+                qty = 1
+            if qty <= 0:
+                return api_error(message='Quantity must be greater than 0')
+
+            validated_items.append({'product': product, 'quantity': qty})
+
+        # Validate stock availability if status is COMPLETED
+        if target_status == 'COMPLETED':
+            for it in validated_items:
+                product = it['product']
+                qty = it['quantity']
+                src_stock = BranchStock.objects.filter(
+                    company=request.user.company, product=product, branch=from_branch, warehouse=None
+                ).first()
+                available_qty = src_stock.quantity if src_stock else 0
+                if available_qty < qty:
+                    return api_error(
+                        message=f"Insufficient stock for '{product.name}' in {from_branch.name}. Available: {available_qty}, Requested: {qty}"
+                    )
+
+        transfer = StockTransfer.objects.create(
+            company=request.user.company,
+            from_branch=from_branch,
+            to_branch=to_branch,
+            notes=notes,
+            status=target_status,
+            created_by=request.user,
+            received_at=timezone.now() if target_status == 'COMPLETED' else None
+        )
+
+        if target_status == 'APPROVED':
+            transfer.approved_by = request.user
+            transfer.approved_at = timezone.now()
+            transfer.save()
+
+        for it in validated_items:
+            product = it['product']
+            qty = it['quantity']
+            StockTransferItem.objects.create(
                 company=request.user.company,
+                transfer=transfer,
                 product=product,
-                branch_id=data['from_branch'],
-                warehouse=None
-            ).first()
-            
-            available_qty = src_stock.quantity if src_stock else 0
-            if available_qty < qty:
-                return api_error(
-                    message=f"Insufficient stock for '{product.name}'. Available: {available_qty}, Requested: {qty}"
-                )
-
-        with transaction.atomic():
-            transfer = StockTransfer.objects.create(
-                company=request.user.company,
-                from_branch_id=data['from_branch'],
-                to_branch_id=data['to_branch'],
-                notes=data.get('notes', ''),
-                status='REQUESTED',
-                created_by=request.user,
+                quantity=qty,
+                received_quantity=qty if target_status == 'COMPLETED' else 0
             )
-            for item_data in data['items']:
-                from .models import StockTransferItem
-                StockTransferItem.objects.create(
-                    company=request.user.company,
-                    transfer=transfer,
-                    product=item_data['product'],
-                    quantity=item_data['quantity'],
+
+            if target_status == 'COMPLETED':
+                src_stock, _ = BranchStock.objects.get_or_create(
+                    company=request.user.company, product=product, branch=from_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                src_stock.quantity -= qty
+                src_stock.save()
+
+                StockMovement.objects.create(
+                    company=request.user.company, product=product, branch=from_branch,
+                    movement_type='TRANSFER_OUT', reason='TRANSFER',
+                    quantity=-qty, balance_after=src_stock.quantity,
+                    reference_type='transfer', reference_id=transfer.transfer_number,
+                    notes=f'Stock transfer to {to_branch.name}',
+                    created_by=request.user,
                 )
 
-        result = StockTransferSerializer(transfer)
-        return api_response(data=result.data, message=f'Transfer {transfer.transfer_number} created',
+                dst_stock, _ = BranchStock.objects.get_or_create(
+                    company=request.user.company, product=product, branch=to_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                dst_stock.quantity += qty
+                dst_stock.save()
+
+                StockMovement.objects.create(
+                    company=request.user.company, product=product, branch=to_branch,
+                    movement_type='TRANSFER_IN', reason='TRANSFER',
+                    quantity=qty, balance_after=dst_stock.quantity,
+                    reference_type='transfer', reference_id=transfer.transfer_number,
+                    notes=f'Stock transfer from {from_branch.name}',
+                    created_by=request.user,
+                )
+
+        transfer.refresh_from_db()
+        return api_response(data=StockTransferSerializer(transfer).data,
+                            message=f'Transfer {transfer.transfer_number} created',
                             status_code=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='create-transfer')
+    def create_transfer(self, request):
+        return self.create(request)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        """Update a stock transfer with all fields editable and stock automatic adjustment."""
+        transfer = self.get_object()
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+
+        from_branch_id = data.get('from_branch', transfer.from_branch_id)
+        to_branch_id = data.get('to_branch', transfer.to_branch_id)
+        new_status = data.get('status', transfer.status)
+        notes = data.get('notes', transfer.notes)
+        items_data = data.get('items', None)
+
+        try:
+            from_branch_id = int(from_branch_id)
+            to_branch_id = int(to_branch_id)
+        except (ValueError, TypeError):
+            return api_error(message='Invalid branch selection')
+
+        if from_branch_id == to_branch_id:
+            return api_error(message='Source and destination branches must be different')
+
+        try:
+            new_from_branch = Branch.objects.get(id=from_branch_id, company=request.user.company)
+            new_to_branch = Branch.objects.get(id=to_branch_id, company=request.user.company)
+        except Branch.DoesNotExist:
+            return api_error(message='Selected branch does not exist')
+
+        was_completed = (transfer.status == 'COMPLETED')
+
+        # 1. If previously COMPLETED, revert the old stock changes first
+        if was_completed:
+            for old_item in transfer.items.all():
+                qty = old_item.quantity
+                src_stock, _ = BranchStock.objects.get_or_create(
+                    company=transfer.company, product=old_item.product, branch=transfer.from_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                src_stock.quantity += qty
+                src_stock.save()
+
+                dst_stock, _ = BranchStock.objects.get_or_create(
+                    company=transfer.company, product=old_item.product, branch=transfer.to_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                dst_stock.quantity -= qty
+                dst_stock.save()
+
+                StockMovement.objects.create(
+                    company=transfer.company, product=old_item.product, branch=transfer.from_branch,
+                    movement_type='IN', reason='STOCK_COUNT',
+                    quantity=qty, balance_after=src_stock.quantity,
+                    reference_type='transfer_edit', reference_id=transfer.transfer_number,
+                    notes=f'Stock reverted before updating transfer {transfer.transfer_number}',
+                    created_by=request.user,
+                )
+                StockMovement.objects.create(
+                    company=transfer.company, product=old_item.product, branch=transfer.to_branch,
+                    movement_type='OUT', reason='STOCK_COUNT',
+                    quantity=-qty, balance_after=dst_stock.quantity,
+                    reference_type='transfer_edit', reference_id=transfer.transfer_number,
+                    notes=f'Stock reverted before updating transfer {transfer.transfer_number}',
+                    created_by=request.user,
+                )
+
+        # 2. Update transfer items if provided
+        if items_data is not None:
+            if not isinstance(items_data, list) or len(items_data) == 0:
+                return api_error(message='At least one product item is required')
+            
+            transfer.items.all().delete()
+            for it in items_data:
+                prod_id = it.get('product')
+                if isinstance(prod_id, dict):
+                    prod_id = prod_id.get('id')
+                try:
+                    product = Product.objects.get(id=prod_id, company=request.user.company)
+                except Product.DoesNotExist:
+                    return api_error(message=f'Product ID {prod_id} not found')
+                
+                try:
+                    qty = int(it.get('quantity', 1))
+                except (ValueError, TypeError):
+                    qty = 1
+                if qty <= 0:
+                    return api_error(message='Quantity must be greater than 0')
+
+                StockTransferItem.objects.create(
+                    company=transfer.company,
+                    transfer=transfer,
+                    product=product,
+                    quantity=qty,
+                    received_quantity=qty if new_status == 'COMPLETED' else 0
+                )
+
+        # 3. Update transfer header fields
+        transfer.from_branch = new_from_branch
+        transfer.to_branch = new_to_branch
+        transfer.status = new_status
+        transfer.notes = notes
+        if new_status == 'COMPLETED' and not transfer.received_at:
+            transfer.received_at = timezone.now()
+        elif new_status == 'APPROVED' and not transfer.approved_at:
+            transfer.approved_by = request.user
+            transfer.approved_at = timezone.now()
+        transfer.save()
+
+        # 4. If newly COMPLETED, apply stock deductions from new_from_branch and additions to new_to_branch
+        if new_status == 'COMPLETED':
+            for item in transfer.items.all():
+                qty = item.quantity
+                src_stock = BranchStock.objects.filter(
+                    company=transfer.company, product=item.product, branch=new_from_branch, warehouse=None
+                ).first()
+                available_qty = src_stock.quantity if src_stock else 0
+                if available_qty < qty:
+                    return api_error(
+                        message=f"Insufficient stock for '{item.product.name}' in {new_from_branch.name}. Available: {available_qty}, Requested: {qty}"
+                    )
+
+            for item in transfer.items.all():
+                qty = item.quantity
+                src_stock, _ = BranchStock.objects.get_or_create(
+                    company=transfer.company, product=item.product, branch=new_from_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                src_stock.quantity -= qty
+                src_stock.save()
+
+                StockMovement.objects.create(
+                    company=transfer.company, product=item.product, branch=new_from_branch,
+                    movement_type='TRANSFER_OUT', reason='TRANSFER',
+                    quantity=-qty, balance_after=src_stock.quantity,
+                    reference_type='transfer', reference_id=transfer.transfer_number,
+                    notes=f'Stock transfer to {new_to_branch.name}',
+                    created_by=request.user,
+                )
+
+                dst_stock, _ = BranchStock.objects.get_or_create(
+                    company=transfer.company, product=item.product, branch=new_to_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                dst_stock.quantity += qty
+                dst_stock.save()
+
+                StockMovement.objects.create(
+                    company=transfer.company, product=item.product, branch=new_to_branch,
+                    movement_type='TRANSFER_IN', reason='TRANSFER',
+                    quantity=qty, balance_after=dst_stock.quantity,
+                    reference_type='transfer', reference_id=transfer.transfer_number,
+                    notes=f'Stock transfer from {new_from_branch.name}',
+                    created_by=request.user,
+                )
+                item.received_quantity = qty
+                item.save()
+
+        transfer.refresh_from_db()
+        return api_response(data=StockTransferSerializer(transfer).data, message=f'Transfer {transfer.transfer_number} updated')
 
     @action(detail=True, methods=['post'], url_path='approve')
     def approve_transfer(self, request, pk=None):
@@ -313,3 +553,47 @@ class StockTransferViewSet(TenantMixin, viewsets.ModelViewSet):
         transfer.status = 'CANCELLED'
         transfer.save()
         return api_response(message=f'Transfer {transfer.transfer_number} cancelled')
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        """Delete a stock transfer and adjust stock if transfer was completed."""
+        transfer = self.get_object()
+
+        # If the transfer was completed, revert stock back to source branch
+        if transfer.status == 'COMPLETED':
+            for item in transfer.items.all():
+                qty = item.quantity
+                src_stock, _ = BranchStock.objects.get_or_create(
+                    company=transfer.company, product=item.product, branch=transfer.from_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                src_stock.quantity += qty
+                src_stock.save()
+
+                dst_stock, _ = BranchStock.objects.get_or_create(
+                    company=transfer.company, product=item.product, branch=transfer.to_branch, warehouse=None,
+                    defaults={'quantity': 0}
+                )
+                dst_stock.quantity -= qty
+                dst_stock.save()
+
+                StockMovement.objects.create(
+                    company=transfer.company, product=item.product, branch=transfer.from_branch,
+                    movement_type='IN', reason='STOCK_COUNT',
+                    quantity=qty, balance_after=src_stock.quantity,
+                    reference_type='transfer_revert', reference_id=transfer.transfer_number,
+                    notes=f'Stock reverted due to deleted transfer {transfer.transfer_number}',
+                    created_by=request.user,
+                )
+                StockMovement.objects.create(
+                    company=transfer.company, product=item.product, branch=transfer.to_branch,
+                    movement_type='OUT', reason='STOCK_COUNT',
+                    quantity=-qty, balance_after=dst_stock.quantity,
+                    reference_type='transfer_revert', reference_id=transfer.transfer_number,
+                    notes=f'Stock reverted due to deleted transfer {transfer.transfer_number}',
+                    created_by=request.user,
+                )
+
+        transfer_number = transfer.transfer_number
+        transfer.delete()
+        return api_response(message=f'Transfer {transfer_number} deleted and stock adjusted successfully')
