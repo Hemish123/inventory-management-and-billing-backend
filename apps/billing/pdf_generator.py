@@ -2,6 +2,10 @@ import os
 from io import BytesIO
 import hashlib
 from django.conf import settings
+from django.utils import timezone
+import pytz
+
+IST_TZ = pytz.timezone('Asia/Kolkata')
 
 # Monkeypatch hashlib.md5 to fix ReportLab 4.x compatibility on Python 3.8
 # which doesn't support the usedforsecurity argument
@@ -171,7 +175,14 @@ def generate_bill_pdf(bill):
 
     # 2. Bill Info
     elements.append(Paragraph(f"<b>Bill No:</b> {bill.bill_number}", normal))
-    elements.append(Paragraph(f"<b>Date:</b> {bill.billing_date.strftime('%d-%m-%Y %H:%M')}", normal))
+    if bill.billing_date:
+        if timezone.is_aware(bill.billing_date):
+            ist_date = bill.billing_date.astimezone(IST_TZ)
+        else:
+            ist_date = IST_TZ.localize(bill.billing_date)
+    else:
+        ist_date = timezone.now().astimezone(IST_TZ)
+    elements.append(Paragraph(f"<b>Date:</b> {ist_date.strftime('%d-%m-%Y %I:%M %p')}", normal))
     if bill.branch:
         elements.append(Paragraph(f"<b>Branch:</b> {bill.branch.name}", normal))
     if bill.cashier:
