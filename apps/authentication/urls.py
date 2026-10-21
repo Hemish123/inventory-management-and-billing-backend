@@ -13,4 +13,5 @@ urlpatterns = [
     path('token/refresh/', views.CustomTokenRefreshView.as_view(), name='token-refresh'),
     path('me/', views.MeView.as_view(), name='auth-me'),
     path('delete-account/', views.DeleteAccountView.as_view(), name='auth-delete-account'),
+    path('change-password/', views.ChangePasswordView.as_view(), name='auth-change-password'),
 ] + router.urls

@@ -24,6 +24,8 @@ class BillSerializer(serializers.ModelSerializer):
     payments = BillPaymentSerializer(many=True, read_only=True)
     cashier_name = serializers.CharField(source='cashier.email', read_only=True, default='')
     branch_name = serializers.CharField(source='branch.name', read_only=True, default='')
+    salesperson_id = serializers.IntegerField(source='salesperson.id', read_only=True, default=None)
+    salesperson_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Bill
@@ -36,9 +38,16 @@ class BillSerializer(serializers.ModelSerializer):
             'round_off', 'grand_total',
             'payment_method', 'amount_received', 'change_due',
             'notes', 'cashier', 'cashier_name',
+            'salesperson_id', 'salesperson_name',
             'items', 'payments',
         ]
         read_only_fields = ['id', 'bill_number', 'billing_date', 'cashier']
+
+    def get_salesperson_name(self, obj):
+        if obj.salesperson:
+            name = f"{obj.salesperson.first_name} {obj.salesperson.last_name}".strip()
+            return name or obj.salesperson.email
+        return None
 
 
 class BillItemCreateSerializer(serializers.Serializer):

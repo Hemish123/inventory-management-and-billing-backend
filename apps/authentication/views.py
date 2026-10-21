@@ -127,6 +127,40 @@ class DeleteAccountView(APIView):
         return api_response(message='Account deleted (deactivated) successfully')
 
 
+class ChangePasswordView(APIView):
+    """Reset password for the authenticated user. No current password required."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        new_password = request.data.get('new_password', '')
+        confirm_password = request.data.get('confirm_password', '')
+
+        if not new_password:
+            return api_error(message='New password is required')
+
+        if new_password != confirm_password:
+            return api_error(message='New password and confirm password do not match')
+
+        if len(new_password) < 6:
+            return api_error(message='New password must be at least 6 characters long')
+
+        user = request.user
+        user.set_password(new_password)
+        user.save()
+
+        # Generate fresh tokens so the user stays logged in
+        refresh = RefreshToken.for_user(user)
+        return api_response(
+            data={
+                'tokens': {
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                }
+            },
+            message='Password changed successfully'
+        )
+
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 

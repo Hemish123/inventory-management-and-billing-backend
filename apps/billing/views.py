@@ -27,7 +27,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         return BillSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related('branch', 'cashier', 'customer')
+        qs = super().get_queryset().select_related('branch', 'cashier', 'customer', 'salesperson')
         branch_id = self.request.query_params.get('branch')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
