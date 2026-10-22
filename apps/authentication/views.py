@@ -253,16 +253,37 @@ class EmployeeViewSet(TenantMixin, viewsets.ModelViewSet):
         return api_error(errors=serializer.errors)
 
     def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
+        partial = kwargs.pop('partial', True)
         instance = self.get_object()
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         data = self._resolve_role(data, request.user.company)
         
+        # If email is blank and user already has a placeholder email (sales), keep it intact
+        if 'email' in data and not data['email']:
+            if instance.email and instance.email.endswith('@placeholder.local'):
+                data.pop('email', None)
+        elif data.get('email'):
+            new_email = str(data.get('email')).strip()
+            data['email'] = new_email
+            old_email = instance.email
+            old_username = instance.username
+            if not data.get('username') or data.get('username') == old_email or data.get('username') == old_username:
+                data['username'] = new_email
+
         serializer = self.get_serializer(instance, data=data, partial=partial)
         if serializer.is_valid():
             self.perform_update(serializer)
             return api_response(data=serializer.data, message='Employee updated')
         return api_error(errors=serializer.errors)
+
+    def perform_update(self, serializer):
+        user = serializer.save()
+        if user.email and not user.email.endswith('@placeholder.local'):
+            if not user.username or '@' in user.username or user.username.startswith('staff_'):
+                if user.username != user.email:
+                    if not CustomUser.objects.filter(username=user.email).exclude(id=user.id).exists():
+                        user.username = user.email
+                        user.save(update_fields=['username'])
 
     def perform_create(self, serializer):
         from django.utils.crypto import get_random_string
