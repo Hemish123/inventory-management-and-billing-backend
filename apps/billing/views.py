@@ -314,6 +314,19 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         bill.delete()
         return api_response(message=f'Draft {bill_number} discarded')
 
+    @action(detail=False, methods=['post'], url_path='bulk-discard')
+    def bulk_discard(self, request):
+        """Delete multiple draft/held bills at once."""
+        ids = request.data.get('ids', [])
+        if not ids:
+            return api_error(message='No draft IDs provided')
+        bills = self.get_queryset().filter(id__in=ids, status__in=('DRAFT', 'HOLD'))
+        count = bills.count()
+        if count == 0:
+            return api_error(message='No valid drafts found to discard')
+        bills.delete()
+        return api_response(message=f'{count} draft(s) discarded')
+
     # ──────────────────────────────────────────────────────────────
     # Void a completed bill (reverses stock)
     # ──────────────────────────────────────────────────────────────

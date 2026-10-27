@@ -3,11 +3,14 @@ from .models import Customer
 
 
 class CustomerSerializer(serializers.ModelSerializer):
+    branch_name = serializers.CharField(source='branch.name', read_only=True, default=None)
+
     class Meta:
         model = Customer
         fields = [
             'id', 'name', 'phone', 'email', 'company', 'gstin',
-            'address', 'is_active', 'created_at', 'updated_at',
+            'address', 'is_active', 'branch', 'branch_name',
+            'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -23,9 +26,11 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 
 class CustomerListSerializer(serializers.ModelSerializer):
+    branch_name = serializers.CharField(source='branch.name', read_only=True, default=None)
+
     class Meta:
         model = Customer
-        fields = ['id', 'name', 'phone', 'email', 'company', 'gstin', 'address', 'is_active', 'created_at']
+        fields = ['id', 'name', 'phone', 'email', 'company', 'gstin', 'address', 'is_active', 'branch', 'branch_name', 'created_at']
 
 
 class CustomerDropdownSerializer(serializers.ModelSerializer):
@@ -33,3 +38,4 @@ class CustomerDropdownSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = ['id', 'name', 'phone', 'email', 'gstin', 'address']
+

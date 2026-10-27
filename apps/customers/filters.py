@@ -8,10 +8,11 @@ class CustomerFilter(django_filters.FilterSet):
     date_from = django_filters.DateFilter(field_name='created_at', lookup_expr='gte')
     date_to = django_filters.DateFilter(field_name='created_at', lookup_expr='lte')
     phone = django_filters.CharFilter(field_name='phone', lookup_expr='icontains')
+    branch = django_filters.NumberFilter(field_name='branch', lookup_expr='exact')
 
     class Meta:
         model = Customer
-        fields = ['search', 'date_from', 'date_to', 'phone']
+        fields = ['search', 'date_from', 'date_to', 'phone', 'branch']
 
     def filter_search(self, queryset, name, value):
         """Search by name, email, GSTIN, or phone number."""
