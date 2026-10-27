@@ -37,5 +37,5 @@ class CustomerDropdownSerializer(serializers.ModelSerializer):
     """Lightweight serializer for billing customer selection."""
     class Meta:
         model = Customer
-        fields = ['id', 'name', 'phone', 'email', 'gstin', 'address']
+        fields = ['id', 'name', 'phone', 'email', 'gstin', 'address', 'branch']
 

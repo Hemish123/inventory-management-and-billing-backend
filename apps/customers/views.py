@@ -26,7 +26,12 @@ class CustomerViewSet(TenantMixin, viewsets.ModelViewSet):
         return CustomerSerializer
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        user = self.request.user
+        branch = serializer.validated_data.get('branch')
+        if not branch and hasattr(user, 'assigned_branch') and user.assigned_branch:
+            serializer.save(created_by=user, branch=user.assigned_branch)
+        else:
+            serializer.save(created_by=user)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -67,6 +72,10 @@ class CustomerViewSet(TenantMixin, viewsets.ModelViewSet):
     def dropdown(self, request):
         """Lightweight list for billing customer dropdowns — no pagination."""
         qs = Customer.objects.filter(company=request.user.company, is_active=True)
+        branch_id = request.query_params.get('branch')
+        if branch_id:
+            from django.db.models import Q
+            qs = qs.filter(Q(branch_id=branch_id) | Q(branch__isnull=True))
             
         customers = qs.order_by('name')
         serializer = CustomerDropdownSerializer(customers, many=True)

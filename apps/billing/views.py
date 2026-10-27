@@ -143,12 +143,26 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                     customer, _ = Customer.objects.get_or_create(
                         company=request.user.company,
                         name=customer_name,
-                        defaults={'phone': customer_phone}
+                        defaults={'phone': customer_phone, 'branch': branch}
                     )
                     customer_id = customer.id
+                    updated_fields = []
                     if customer_phone and not customer.phone:
                         customer.phone = customer_phone
-                        customer.save()
+                        updated_fields.append('phone')
+                    if branch and not customer.branch:
+                        customer.branch = branch
+                        updated_fields.append('branch')
+                    if updated_fields:
+                        customer.save(update_fields=updated_fields)
+                elif customer_id and branch:
+                    try:
+                        cust_obj = Customer.objects.get(id=customer_id, company=request.user.company)
+                        if not cust_obj.branch:
+                            cust_obj.branch = branch
+                            cust_obj.save(update_fields=['branch'])
+                    except Customer.DoesNotExist:
+                        pass
 
                 bill = Bill.objects.create(
                     company=request.user.company,
@@ -491,12 +505,26 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                     customer, _ = Customer.objects.get_or_create(
                         company=bill.company,
                         name=customer_name,
-                        defaults={'phone': customer_phone}
+                        defaults={'phone': customer_phone, 'branch': bill.branch}
                     )
                     customer_id = customer.id
+                    updated_fields = []
                     if customer_phone and not customer.phone:
                         customer.phone = customer_phone
-                        customer.save()
+                        updated_fields.append('phone')
+                    if bill.branch and not customer.branch:
+                        customer.branch = bill.branch
+                        updated_fields.append('branch')
+                    if updated_fields:
+                        customer.save(update_fields=updated_fields)
+                elif customer_id and bill.branch:
+                    try:
+                        cust_obj = Customer.objects.get(id=customer_id, company=bill.company)
+                        if not cust_obj.branch:
+                            cust_obj.branch = bill.branch
+                            cust_obj.save(update_fields=['branch'])
+                    except Customer.DoesNotExist:
+                        pass
                 
                 if customer_id:
                     bill.customer_id = customer_id
