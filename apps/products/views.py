@@ -93,7 +93,7 @@ class SupplierViewSet(TenantMixin, viewsets.ModelViewSet):
 class ProductViewSet(TenantMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = Product.objects.all()
-    search_fields = ['name', 'sku', 'barcode', 'hsn_code']
+    search_fields = ['name', 'sku', 'barcode', 'hsn_code', 'brand__name', 'category__name', 'supplier__name']
     ordering_fields = ['name', 'selling_price', 'created_at']
 
     def get_serializer_class(self):

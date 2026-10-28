@@ -18,7 +18,10 @@ from .serializers import (
 class BillViewSet(TenantMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = Bill.objects.all()
-    search_fields = ['bill_number', 'customer_name', 'customer_phone']
+    search_fields = [
+        'bill_number', 'customer_name', 'customer_phone', 'branch__name',
+        'cashier__first_name', 'cashier__last_name', 'cashier__email', 'cashier__username'
+    ]
     ordering_fields = ['billing_date', 'grand_total']
 
     def get_serializer_class(self):
