@@ -615,8 +615,19 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
         if not phone_number:
             return False, "Customer phone number is required"
             
-        if not phone_number.startswith('91'):
+        import re
+        # Clean phone number: remove +, spaces, hyphens, brackets, non-digits
+        phone_number = re.sub(r'\D', '', str(phone_number))
+        
+        # Ensure standard Indian format (91XXXXXXXXXX)
+        if len(phone_number) == 10:
             phone_number = f"91{phone_number}"
+        elif len(phone_number) == 11 and phone_number.startswith('0'):
+            phone_number = f"91{phone_number[1:]}"
+        elif len(phone_number) == 12 and phone_number.startswith('91'):
+            pass  # Already properly formatted with country code
+        elif len(phone_number) < 10:
+            return False, f"Invalid customer phone number: {phone_number}"
             
         meta_token = os.environ.get('META_WHATSAPP_TOKEN')
         phone_id = os.environ.get('META_PHONE_ID')
