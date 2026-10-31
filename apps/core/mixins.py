@@ -8,9 +8,14 @@ class TenantMixin:
     and inject the user's company on creation.
     """
     def get_queryset(self):
-        """Filter the queryset by the logged-in user's company."""
+        """Filter the queryset by the logged-in user's company.
+        Superusers can see all data across all companies."""
         qs = super().get_queryset()
         user = self.request.user
+
+        # Superusers bypass the tenant filter and see all data
+        if user.is_superuser:
+            return qs
         
         if hasattr(user, 'company') and user.company:
             return qs.filter(company=user.company)

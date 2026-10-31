@@ -215,6 +215,8 @@ class EmployeeViewSet(TenantMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         qs = qs.exclude(id=self.request.user.id)
+        # Hide superusers from the employee list
+        qs = qs.exclude(is_superuser=True)
         # Filter by role name if provided
         role_filter = self.request.query_params.get('role')
         if role_filter:
