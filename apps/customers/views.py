@@ -1,4 +1,4 @@
-from apps.core.mixins import TenantMixin
+from apps.core.mixins import TenantMixin, get_company_filter
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -71,7 +71,7 @@ class CustomerViewSet(TenantMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='dropdown')
     def dropdown(self, request):
         """Lightweight list for billing customer dropdowns — no pagination."""
-        qs = Customer.objects.filter(company=request.user.company, is_active=True)
+        qs = Customer.objects.filter(get_company_filter(request.user), is_active=True)
         branch_id = request.query_params.get('branch')
         if branch_id:
             from django.db.models import Q

@@ -1,6 +1,21 @@
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from utils.response import api_response
 
+
+def get_company_filter(user, field='company'):
+    """
+    Return a Q filter for company-scoped queries.
+    Superusers see all data (no filter). Regular users see only their company's data.
+    
+    Usage: Model.objects.filter(get_company_filter(request.user))
+    For related fields: Model.objects.filter(get_company_filter(request.user, 'bill__company'))
+    """
+    if user.is_superuser:
+        return Q()  # No filter — superuser sees everything
+    if hasattr(user, 'company') and user.company:
+        return Q(**{field: user.company})
+    # No company — match nothing
+    return Q(pk__isnull=True) & Q(pk__isnull=False)  # Always False
 
 class TenantMixin:
     """

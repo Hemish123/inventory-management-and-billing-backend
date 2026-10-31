@@ -17,6 +17,7 @@ from apps.stock.models import StockMovement
 from apps.purchases.models import Purchase, PurchaseItem
 from apps.customers.models import Customer
 from apps.core.models import Branch
+from apps.core.mixins import get_company_filter
 
 
 def _parse_dates(request):
@@ -53,7 +54,7 @@ class DashboardStatsView(APIView):
         today = timezone.now().date()
         month_start = today.replace(day=1)
 
-        bills_qs = Bill.objects.filter(company=request.user.company, status='COMPLETED')
+        bills_qs = Bill.objects.filter(get_company_filter(request.user), status='COMPLETED')
         if request.user.role_name in ['EMPLOYEE', 'USER']:
             bills_qs = bills_qs.filter(cashier=request.user)
         if branch_id:
@@ -67,9 +68,9 @@ class DashboardStatsView(APIView):
         today_bill_count = today_bills.count()
         month_bill_count = month_bills.count()
 
-        product_count = Product.objects.filter(company=request.user.company, is_active=True).count()
+        product_count = Product.objects.filter(get_company_filter(request.user), is_active=True).count()
 
-        stock_qs = BranchStock.objects.filter(company=request.user.company).select_related('product')
+        stock_qs = BranchStock.objects.filter(get_company_filter(request.user)).select_related('product')
         if branch_id:
             stock_qs = stock_qs.filter(branch_id=branch_id)
 
@@ -77,7 +78,7 @@ class DashboardStatsView(APIView):
             1 for bs in stock_qs if bs.quantity < bs.product.minimum_stock_level
         )
 
-        pending_purchases_qs = Purchase.objects.filter(company=request.user.company, status__in=['DRAFT', 'ORDERED', 'PARTIAL'])
+        pending_purchases_qs = Purchase.objects.filter(get_company_filter(request.user), status__in=['DRAFT', 'ORDERED', 'PARTIAL'])
         if request.user.role_name in ['EMPLOYEE', 'USER']:
             pending_purchases_qs = pending_purchases_qs.filter(created_by=request.user)
         pending_purchases = pending_purchases_qs.count()
@@ -106,7 +107,7 @@ class SalesReportView(APIView):
         branch_id = request.query_params.get('branch')
 
         qs = Bill.objects.filter(
-            company=request.user.company,
+            get_company_filter(request.user),
             status='COMPLETED',
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
@@ -196,7 +197,7 @@ class SalesTrendView(APIView):
         branch_id = request.query_params.get('branch')
         thirty_days_ago = timezone.now().date() - timedelta(days=30)
 
-        qs = Bill.objects.filter(company=request.user.company, status='COMPLETED', billing_date__date__gte=thirty_days_ago)
+        qs = Bill.objects.filter(get_company_filter(request.user), status='COMPLETED', billing_date__date__gte=thirty_days_ago)
         if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(cashier=request.user)
         if branch_id:
@@ -220,7 +221,7 @@ class PurchaseReportView(APIView):
         start_date, end_date = _parse_dates(request)
         branch_id = request.query_params.get('branch')
 
-        qs = Purchase.objects.filter(company=request.user.company, purchase_date__gte=start_date, purchase_date__lte=end_date)
+        qs = Purchase.objects.filter(get_company_filter(request.user), purchase_date__gte=start_date, purchase_date__lte=end_date)
         if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(created_by=request.user)
         if branch_id:
@@ -259,7 +260,7 @@ class InventoryReportView(APIView):
 
     def get(self, request):
         branch_id = request.query_params.get('branch')
-        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch', 'product__category', 'product__brand', 'product__supplier')
+        qs = BranchStock.objects.filter(get_company_filter(request.user)).select_related('product', 'branch', 'product__category', 'product__brand', 'product__supplier')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -298,7 +299,7 @@ class TopProductsView(APIView):
         start_date, end_date = _parse_dates(request)
 
         qs = BillItem.objects.filter(
-            company=request.user.company,
+            get_company_filter(request.user),
             bill__status='COMPLETED',
             bill__billing_date__date__gte=start_date,
             bill__billing_date__date__lte=end_date,
@@ -327,7 +328,7 @@ class LowStockView(APIView):
 
     def get(self, request):
         branch_id = request.query_params.get('branch')
-        qs = BranchStock.objects.filter(company=request.user.company).select_related('product', 'branch', 'product__brand')
+        qs = BranchStock.objects.filter(get_company_filter(request.user)).select_related('product', 'branch', 'product__brand')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -360,10 +361,10 @@ class DeadStockView(APIView):
         cutoff = timezone.now().date() - timedelta(days=days)
 
         sold_product_ids = BillItem.objects.filter(
-            company=request.user.company, bill__status='COMPLETED', bill__billing_date__date__gte=cutoff
+            get_company_filter(request.user), bill__status='COMPLETED', bill__billing_date__date__gte=cutoff
         ).values_list('product_id', flat=True).distinct()
 
-        products = Product.objects.filter(company=request.user.company, is_active=True).exclude(
+        products = Product.objects.filter(get_company_filter(request.user), is_active=True).exclude(
             id__in=sold_product_ids
         ).select_related('category', 'brand')
 
@@ -386,7 +387,7 @@ class BranchSalesReportView(APIView):
         start_date, end_date = _parse_dates(request)
 
         qs = Bill.objects.filter(
-            company=request.user.company,
+            get_company_filter(request.user),
             status='COMPLETED',
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
@@ -417,7 +418,7 @@ class SupplierPurchaseReportView(APIView):
     def get(self, request):
         start_date, end_date = _parse_dates(request)
 
-        qs = Purchase.objects.filter(company=request.user.company, purchase_date__gte=start_date, purchase_date__lte=end_date)
+        qs = Purchase.objects.filter(get_company_filter(request.user), purchase_date__gte=start_date, purchase_date__lte=end_date)
         if request.user.role_name in ['EMPLOYEE', 'USER']:
             qs = qs.filter(created_by=request.user)
 
@@ -443,7 +444,7 @@ class CustomerPurchaseReportView(APIView):
         start_date, end_date = _parse_dates(request)
 
         qs = Bill.objects.filter(
-            company=request.user.company,
+            get_company_filter(request.user),
             status='COMPLETED',
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
@@ -478,7 +479,7 @@ class ProfitReportView(APIView):
         branch_id = request.query_params.get('branch')
 
         qs = BillItem.objects.filter(
-            company=request.user.company,
+            get_company_filter(request.user),
             bill__status='COMPLETED',
             bill__billing_date__date__gte=start_date,
             bill__billing_date__date__lte=end_date,
@@ -515,7 +516,7 @@ class StockValuationView(APIView):
 
     def get(self, request):
         branch_id = request.query_params.get('branch')
-        qs = BranchStock.objects.filter(company=request.user.company, quantity__gt=0).select_related('product', 'branch', 'product__brand')
+        qs = BranchStock.objects.filter(get_company_filter(request.user), quantity__gt=0).select_related('product', 'branch', 'product__brand')
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
 
@@ -553,7 +554,7 @@ class EmployeeSalesReportView(APIView):
         branch_id = request.query_params.get('branch')
 
         qs = Bill.objects.filter(
-            company=request.user.company,
+            get_company_filter(request.user),
             status='COMPLETED',
             billing_date__date__gte=start_date,
             billing_date__date__lte=end_date,
