@@ -312,6 +312,15 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
 
                 # NOW deduct stock
                 self._deduct_stock(bill, request.user)
+
+                # Send WhatsApp receipt if requested
+                if send_whatsapp and getattr(bill, 'customer_phone', None):
+                    try:
+                        success, msg_result = self._send_whatsapp_message(bill)
+                        if not success:
+                            print(f'WHATSAPP ERROR (finalize): {msg_result}')
+                    except Exception as e:
+                        print(f'WHATSAPP EXCEPTION (finalize): {e}')
         except ValueError as e:
             return api_error(message=str(e))
 
@@ -534,6 +543,10 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 bill.customer_name = customer_name
                 bill.customer_phone = customer_phone
 
+                # Update payment method & split payments
+                payment_method = request.data.get('payment_method', bill.payment_method)
+                bill.payment_method = payment_method
+
                 bill.subtotal = subtotal
                 bill.tax_total = tax_total
                 bill.discount_type = discount_type
@@ -544,6 +557,20 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 bill.amount_received = amount_received
                 bill.change_due = change_due
                 bill.save()
+
+                payments_data = request.data.get('payments', [])
+                if payment_method == 'SPLIT' and payments_data:
+                    bill.payments.all().delete()
+                    for pay in payments_data:
+                        BillPayment.objects.create(
+                            company=bill.company,
+                            bill=bill,
+                            payment_method=pay['payment_method'],
+                            amount=Decimal(str(pay['amount'])),
+                            reference=pay.get('reference', ''),
+                        )
+                elif payment_method != 'SPLIT':
+                    bill.payments.all().delete()
 
                 # 5. Deduct stock for new items
                 self._deduct_stock(bill, request.user)
@@ -740,6 +767,8 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
             if response.status_code == 200:
                 return True, "WhatsApp message sent successfully!"
             else:
+                print(f"[WHATSAPP FAILED] Phone: {phone_number}, Bill: #{bill.bill_number}, Status: {response.status_code}, Response: {response.text}")
                 return False, f"Failed to send: {response.json()}"
         except Exception as e:
+            print(f"[WHATSAPP EXCEPTION] Phone: {phone_number}, Bill: #{bill.bill_number}, Error: {e}")
             return False, str(e)
