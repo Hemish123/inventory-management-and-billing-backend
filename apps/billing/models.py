@@ -20,9 +20,12 @@ class BillSequence(models.Model):
             seq, _ = cls.objects.select_for_update().get_or_create(
                 company=branch.company, branch=branch, date=today, defaults={'last_number': 0}
             )
-            seq.last_number += 1
-            seq.save()
-        return f"{branch.code}-{today.strftime('%Y%m%d')}-{seq.last_number:04d}"
+            while True:
+                seq.last_number += 1
+                candidate = f"{branch.code}-{today.strftime('%Y%m%d')}-{seq.last_number:04d}"
+                if not Bill.objects.filter(company=branch.company, bill_number=candidate).exists():
+                    seq.save()
+                    return candidate
 
 
 PAYMENT_METHOD_CHOICES = [

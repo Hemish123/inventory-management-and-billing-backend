@@ -125,6 +125,9 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 amount_received = data.get('amount_received', grand_total)
                 change_due = max(Decimal('0'), amount_received - grand_total)
 
+                # Determine company: always fallback to branch's company if user has no company or is superuser
+                target_company = branch.company or getattr(request.user, 'company', None)
+
                 # Determine salesperson if provided
                 from apps.authentication.models import CustomUser
                 cashier_user = request.user
@@ -132,8 +135,8 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 salesperson_id = data.get('salesperson_id')
                 if salesperson_id:
                     try:
-                        salesperson_user = CustomUser.objects.get(id=salesperson_id, company=request.user.company)
-                    except CustomUser.DoesNotExist:
+                        salesperson_user = CustomUser.objects.filter(id=salesperson_id).first()
+                    except Exception:
                         pass
                 
                 # Auto-create customer if missing
@@ -144,7 +147,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 
                 if customer_name and customer_name != 'Walk-in Customer' and not customer_id:
                     customer, _ = Customer.objects.get_or_create(
-                        company=request.user.company,
+                        company=target_company,
                         name=customer_name,
                         defaults={'phone': customer_phone, 'branch': branch}
                     )
@@ -160,15 +163,15 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                         customer.save(update_fields=updated_fields)
                 elif customer_id and branch:
                     try:
-                        cust_obj = Customer.objects.get(id=customer_id, company=request.user.company)
-                        if not cust_obj.branch:
+                        cust_obj = Customer.objects.filter(id=customer_id).first()
+                        if cust_obj and not cust_obj.branch:
                             cust_obj.branch = branch
                             cust_obj.save(update_fields=['branch'])
-                    except Customer.DoesNotExist:
+                    except Exception:
                         pass
 
                 bill = Bill.objects.create(
-                    company=request.user.company,
+                    company=target_company,
                     bill_number=bill_number,
                     branch=branch,
                     customer_id=customer_id,
@@ -194,7 +197,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 for item_data in items_data:
                     product = Product.objects.get(id=item_data['product'])
                     BillItem.objects.create(
-                        company=request.user.company,
+                        company=target_company,
                         bill=bill,
                         product=product,
                         product_name=item_data.get('product_name', product.name),
@@ -214,7 +217,7 @@ class BillViewSet(TenantMixin, viewsets.ModelViewSet):
                 if data['payment_method'] == 'SPLIT' and data.get('payments'):
                     for pay in data['payments']:
                         BillPayment.objects.create(
-                            company=request.user.company,
+                            company=target_company,
                             bill=bill,
                             payment_method=pay['payment_method'],
                             amount=pay['amount'],
