@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 
-DEBUG = False
+DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 # Application definition
@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'apps.reports',
     'drf_spectacular',
     'apps.passes',
+    'apps.expo_feedback',
 ]
 
 MIDDLEWARE = [
