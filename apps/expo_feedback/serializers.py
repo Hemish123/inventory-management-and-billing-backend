@@ -1,5 +1,7 @@
+import uuid
+from django.utils.text import slugify
 from rest_framework import serializers
-from .models import VisitorSession, SessionFeedback, ClaimTrial
+from .models import VisitorSession, SessionFeedback, ClaimTrial, UserCredit, CreditTransaction,ExpoVoiceAgent
 
 
 def normalize_text(value, max_length=None):
@@ -177,20 +179,124 @@ def extract_claim_trial_fields(raw_data):
 
 class ClaimTrialSerializer(serializers.ModelSerializer):
     session_id = serializers.UUIDField(source='session.id', read_only=True, default=None)
+    user_id = serializers.IntegerField(source='user.id', read_only=True, default=None)
 
     class Meta:
         model = ClaimTrial
         fields = [
             'id',
             'session_id',
+            'user_id',
             'user_name',
             'email',
             'phone_number',
             'company_name',
             'industry',
             'address',
+            'credits_granted',
             'created_at',
             'updated_at',
         ]
         read_only_fields = fields
+
+
+class CreditTransactionSerializer(serializers.ModelSerializer):
+    action_label = serializers.CharField(source='get_action_display', read_only=True)
+
+    class Meta:
+        model = CreditTransaction
+        fields = [
+            'id',
+            'amount',
+            'balance_after',
+            'action',
+            'action_label',
+            'description',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class UserCreditSerializer(serializers.ModelSerializer):
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    recent_transactions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserCredit
+        fields = [
+            'credits',
+            'total_earned',
+            'total_spent',
+            'has_claimed_trial',
+            'user_email',
+            'created_at',
+            'updated_at',
+            'recent_transactions',
+        ]
+        read_only_fields = fields
+
+    def get_recent_transactions(self, obj):
+        txs = obj.user.credit_transactions.all()[:15]
+        return CreditTransactionSerializer(txs, many=True).data
+class ExpoVoiceAgentSerializer(serializers.ModelSerializer):
+    id = serializers.SlugField(max_length=100, required=False, allow_blank=True)
+
+    class Meta:
+        model = ExpoVoiceAgent
+        fields = [
+            'id',
+            'name',
+            'app_id',
+            'description',
+            'language',
+            'accent',
+            'include_agent_variables',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+    def validate_id(self, value):
+        if value:
+            cleaned = slugify(value)
+            if not cleaned:
+                raise serializers.ValidationError('Agent ID must be a valid slug (letters, numbers, hyphens, underscores).')
+            qs = ExpoVoiceAgent.objects.filter(id=cleaned)
+            if self.instance is not None:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError('An agent with this ID already exists.')
+            return cleaned
+        return value
+
+    def validate_name(self, value):
+        cleaned = (value or '').strip()
+        if not cleaned:
+            raise serializers.ValidationError('Agent name is required.')
+        return cleaned
+
+    def validate_app_id(self, value):
+        cleaned = (value or '').strip()
+        if not cleaned:
+            raise serializers.ValidationError('App ID is required.')
+        qs = ExpoVoiceAgent.objects.filter(app_id=cleaned)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('An agent with this app_id already exists.')
+        return cleaned
+
+    def create(self, validated_data):
+        agent_id = validated_data.get('id')
+        if not agent_id:
+            base_slug = slugify(validated_data.get('name', '')) or f"agent-{uuid.uuid4().hex[:8]}"
+            base_slug = base_slug[:90]
+            candidate = base_slug
+            counter = 2
+            while ExpoVoiceAgent.objects.filter(id=candidate).exists():
+                candidate = f"{base_slug}-{counter}"
+                counter += 1
+            validated_data['id'] = candidate
+        return super().create(validated_data)
+
 

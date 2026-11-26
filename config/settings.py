@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'apps.passes',
     'apps.expo_feedback',
+    'apps.ask_ai_demo',
 ]
 
 MIDDLEWARE = [
@@ -232,9 +233,24 @@ SIMPLE_JWT = {
 }
 
 # CORS
+from corsheaders.defaults import default_headers
+
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://nice-bay-0ae59f000.5.azurestaticapps.net','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net', 'https://retailtrack.jmstech.co', 'https://api.retailtrack.jmstech.co']
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-user-email',
+    'x-user-id',
+    'x-admin-pin',
+]
+CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://nice-bay-0ae59f000.5.azurestaticapps.net','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net', 'https://retailtrack.jmstech.co', 'https://api.retailtrack.jmstech.co']
+CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://onesuit.jmstech.co','https://nice-bay-0ae59f000.5.azurestaticapps.net','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net', 'https://retailtrack.jmstech.co', 'https://api.retailtrack.jmstech.co']
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://onesuit.jmstech.co','https://nice-bay-0ae59f000.5.azurestaticapps.net','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net', 'https://retailtrack.jmstech.co', 'https://api.retailtrack.jmstech.co']
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    *default_headers,
+    'x-admin-pin',
+]
 
 # Azure OpenAI — removed during RetailTrack refactor
 
@@ -340,12 +356,13 @@ CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
 # ──────────────────────────────────────────────
-# AZURE OPENAI (for Navratri Face Pass)
+# AZURE OPENAI
 # ──────────────────────────────────────────────
 AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "https://jivihireopenai.openai.azure.com")
-AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_KEY", "")
-AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
-AZURE_OPENAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY") or os.environ.get("AZURE_OPENAI_KEY", "")
+AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+AZURE_OPENAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-mini")
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
 
 # ──────────────────────────────────────────────
 # Navratri Face Engine Configuration
@@ -368,3 +385,19 @@ AZURE_STORAGE_ACCOUNT_KEY = os.environ.get('AZURE_ACCOUNT_KEY')
 AZURE_STORAGE_CONTAINER = os.environ.get('AZURE_CONTAINER', 'media')
 AZURE_STORAGE_CONNECTION_STRING = os.environ.get('AZURE_STORAGE_CONNECTION_STRING', '')
 AZURE_SAS_EXPIRY_MINUTES = 10
+
+
+AZURE_SANDBOX_START_URL = os.environ.get("AZURE_SANDBOX_URL")
+
+
+
+
+# ---- Multi-model Ask AI (Gemini / Claude) ----
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') or os.environ.get('gemini_key')
+GEMINI_USE_OPENAI_KEY = os.environ.get('GEMINI_USE_OPENAI_KEY', 'true').lower() in ('1', 'true', 'yes')
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('clude_key') or os.environ.get('claude_key')
+ANTHROPIC_WORKSPACE_ID = os.environ.get('ANTHROPIC_WORKSPACE_ID') or os.environ.get('anthropic_workspace_id')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash')
+CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6')
+# Expo Feedback Voice Agents Admin PIN (must match frontend VITE_ADMIN_PIN)
+EXPO_ADMIN_PIN = os.environ.get('EXPO_ADMIN_PIN') or os.environ.get('VITE_ADMIN_PIN', '')

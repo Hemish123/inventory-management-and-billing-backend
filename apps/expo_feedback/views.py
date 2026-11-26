@@ -1,21 +1,33 @@
+import hmac
 import uuid
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
+from django.contrib.auth import get_user_model
+from django.utils.crypto import get_random_string
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import VisitorSession, SessionFeedback, ClaimTrial
+from .models import VisitorSession, SessionFeedback, ClaimTrial, UserCredit, CreditTransaction,ExpoVoiceAgent
+from .models import VisitorSession, SessionFeedback, ClaimTrial, ExpoVoiceAgent
 from .serializers import (
     VisitorSessionSerializer,
     SessionFeedbackSerializer,
     ClaimTrialSerializer,
+    UserCreditSerializer,
+    CreditTransactionSerializer,
+    ExpoVoiceAgentSerializer,
     extract_entry_fields,
     extract_feedback_fields,
     extract_claim_trial_fields,
     normalize_text,
+)
+from .credits import (
+    claim_trial_credits_for_user,
+    get_or_create_user_credit,
 )
 
 
@@ -300,9 +312,48 @@ class FeedbackSummaryView(APIView):
         )
 
 
+def _resolve_or_create_user(request, email='', user_name='', phone_number=''):
+    User = get_user_model()
+    if getattr(request, 'user', None) and request.user.is_authenticated:
+        return request.user
+
+    email = (email or '').strip()
+    if email:
+        user = User.objects.filter(email__iexact=email).first()
+        if user:
+            return user
+        base_username = email.split('@')[0][:25]
+        username = base_username or f"user_{get_random_string(8)}"
+        counter = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base_username}_{counter}"
+            counter += 1
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            first_name=user_name[:150] if user_name else '',
+            phone=phone_number[:20] if phone_number else '',
+            is_active=True,
+        )
+        user.set_unusable_password()
+        user.save()
+        return user
+
+    first_user = User.objects.order_by('id').first()
+    if first_user:
+        return first_user
+
+    temp_username = f"temp_user_{get_random_string(8)}"
+    temp_email = f"{temp_username}@example.com"
+    user = User.objects.create_user(username=temp_username, email=temp_email, is_active=True)
+    user.set_unusable_password()
+    user.save()
+    return user
+
+
 class ClaimTrialView(APIView):
     """
-    POST /api/expo_feedback/claim_trial/ -> Submit Claim Trial form details
+    POST /api/expo_feedback/claim_trial/ -> Submit Claim Trial form details & claim 1000 credits
     GET  /api/expo_feedback/claim_trial/ -> List all Claim Trial submissions
       Optional filters: ?industry=<text>&search=<text>
 
@@ -323,8 +374,16 @@ class ClaimTrialView(APIView):
         if parsed_uuid is not None:
             session = VisitorSession.objects.filter(id=parsed_uuid).first()
 
+        user = _resolve_or_create_user(
+            request,
+            email=fields['email'],
+            user_name=fields['user_name'],
+            phone_number=fields['phone_number'],
+        )
+
         claim = ClaimTrial.objects.create(
             session=session,
+            user=user,
             user_name=fields['user_name'],
             email=fields['email'],
             phone_number=fields['phone_number'],
@@ -333,9 +392,34 @@ class ClaimTrialView(APIView):
             address=fields['address'],
         )
 
+        user_credit, granted, credit_msg = claim_trial_credits_for_user(user, claim)
+
+        claim_data = ClaimTrialSerializer(claim).data
+        claim_data['credits'] = user_credit.credits
+        claim_data['credits_granted'] = 1000 if granted else 0
+        claim_data['has_claimed_trial'] = user_credit.has_claimed_trial
+
+        try:
+            from rest_framework_simplejwt.tokens import RefreshToken
+            refresh = RefreshToken.for_user(user)
+            claim_data['tokens'] = {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            }
+        except Exception:
+            claim_data['tokens'] = None
+
+        claim_data['user'] = {
+            'id': user.id,
+            'email': user.email,
+            'username': user.username,
+            'name': f"{user.first_name} {user.last_name}".strip() or fields['user_name'],
+            'phone': user.phone or fields['phone_number'],
+        }
+
         return _ok(
-            data=ClaimTrialSerializer(claim).data,
-            message='Trial claim submitted successfully',
+            data=claim_data,
+            message=credit_msg,
             status_code=status.HTTP_201_CREATED,
         )
 
@@ -412,5 +496,179 @@ class IndustryChoicesView(APIView):
             },
             message='Industries retrieved successfully',
         )
+
+
+class UserCreditView(APIView):
+    """
+    GET /api/expo_feedback/credits/
+    GET /api/expo_feedback/claim_trial/credits/
+    Returns the user's available credits, lifetime statistics, and recent transactions.
+    Optional query params: ?email=<email> or ?user_id=<id>
+    """
+def _error_response(message='Validation error', errors=None, status_code=status.HTTP_400_BAD_REQUEST):
+    if errors and message == 'Validation error':
+        try:
+            first_field = next(iter(errors))
+            first_err = errors[first_field]
+            if isinstance(first_err, list) and first_err:
+                message = str(first_err[0])
+            elif isinstance(first_err, str):
+                message = first_err
+        except Exception:
+            pass
+    return Response(
+        {
+            'success': False,
+            'message': message,
+            'data': None,
+            'errors': errors,
+        },
+        status=status_code,
+    )
+
+
+def _check_admin_pin(request):
+    """
+    Validate X-Admin-Pin header against settings.EXPO_ADMIN_PIN.
+    Returns (is_valid, error_response_or_None).
+    """
+    expected_pin = str(getattr(settings, 'EXPO_ADMIN_PIN', '') or '').strip()
+    if not expected_pin:
+        return False, _error_response(
+            message='Admin PIN is not configured on the server.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    provided_pin = str(request.headers.get('X-Admin-Pin', '') or '').strip()
+    if not provided_pin or not hmac.compare_digest(provided_pin, expected_pin):
+        return False, _error_response(
+            message='Invalid or missing admin PIN.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    return True, None
+
+
+class ExpoVoiceAgentListCreateView(APIView):
+    """
+    GET  /api/expo_feedback/agents/ -> Public list of all voice agents
+    POST /api/expo_feedback/agents/ -> Admin-PIN-protected creation of a voice agent
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        User = get_user_model()
+        user = None
+
+        user_id = request.query_params.get('user_id')
+        email = request.query_params.get('email', '').strip()
+
+        if user_id:
+            user = User.objects.filter(pk=user_id).first()
+        elif email:
+            user = User.objects.filter(email__iexact=email).first()
+        elif getattr(request, 'user', None) and request.user.is_authenticated:
+            user = request.user
+        else:
+            user = User.objects.order_by('id').first()
+
+        if not user:
+            return _not_found('No user found to retrieve credits for.')
+
+        user_credit = get_or_create_user_credit(user)
+        return _ok(
+            data=UserCreditSerializer(user_credit).data,
+            message='User credits retrieved successfully',
+        )
+
+
+        agents = ExpoVoiceAgent.objects.all()
+        serializer = ExpoVoiceAgentSerializer(agents, many=True)
+        return _ok(
+            data={
+                'count': agents.count(),
+                'results': serializer.data,
+            },
+            message='Voice agents retrieved successfully',
+        )
+
+    def post(self, request):
+        is_valid, err_resp = _check_admin_pin(request)
+        if not is_valid:
+            return err_resp
+
+        serializer = ExpoVoiceAgentSerializer(data=request.data)
+        if serializer.is_valid():
+            agent = serializer.save()
+            return _ok(
+                data=ExpoVoiceAgentSerializer(agent).data,
+                message='Voice agent created successfully',
+                status_code=status.HTTP_201_CREATED,
+            )
+        return _error_response(
+            message='Validation error',
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ExpoVoiceAgentDetailView(APIView):
+    """
+    GET    /api/expo_feedback/agents/<agent_id>/ -> Public fetch of a single agent
+    PATCH  /api/expo_feedback/agents/<agent_id>/ -> Admin-PIN-protected partial update
+    DELETE /api/expo_feedback/agents/<agent_id>/ -> Admin-PIN-protected delete
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, agent_id):
+        agent = ExpoVoiceAgent.objects.filter(id=agent_id).first()
+        if agent is None:
+            return _not_found('Voice agent not found')
+        return _ok(
+            data=ExpoVoiceAgentSerializer(agent).data,
+            message='Voice agent retrieved successfully',
+        )
+
+    def patch(self, request, agent_id):
+        is_valid, err_resp = _check_admin_pin(request)
+        if not is_valid:
+            return err_resp
+
+        agent = ExpoVoiceAgent.objects.filter(id=agent_id).first()
+        if agent is None:
+            return _not_found('Voice agent not found')
+
+        serializer = ExpoVoiceAgentSerializer(agent, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated = serializer.save()
+            return _ok(
+                data=ExpoVoiceAgentSerializer(updated).data,
+                message='Voice agent updated successfully',
+            )
+        return _error_response(
+            message='Validation error',
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def delete(self, request, agent_id):
+        is_valid, err_resp = _check_admin_pin(request)
+        if not is_valid:
+            return err_resp
+
+        agent = ExpoVoiceAgent.objects.filter(id=agent_id).first()
+        if agent is None:
+            return _not_found('Voice agent not found')
+
+        deleted_id = agent.id
+        agent.delete()
+        return _ok(
+            data={'id': deleted_id},
+            message='Voice agent deleted successfully',
+        )
+
 
 
