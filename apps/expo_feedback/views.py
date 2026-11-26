@@ -7,12 +7,14 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import VisitorSession, SessionFeedback
+from .models import VisitorSession, SessionFeedback, ClaimTrial
 from .serializers import (
     VisitorSessionSerializer,
     SessionFeedbackSerializer,
+    ClaimTrialSerializer,
     extract_entry_fields,
     extract_feedback_fields,
+    extract_claim_trial_fields,
     normalize_text,
 )
 
@@ -296,3 +298,119 @@ class FeedbackSummaryView(APIView):
             },
             message='Feedback summary retrieved successfully',
         )
+
+
+class ClaimTrialView(APIView):
+    """
+    POST /api/expo_feedback/claim_trial/ -> Submit Claim Trial form details
+    GET  /api/expo_feedback/claim_trial/ -> List all Claim Trial submissions
+      Optional filters: ?industry=<text>&search=<text>
+
+    Accepts every submission (duplicates, partial fields, optional session_id)
+    without ever rejecting.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        payload = _get_payload_dict(request)
+        fields = extract_claim_trial_fields(payload)
+
+        # Optionally attach to an existing VisitorSession if session_id is passed
+        session = None
+        parsed_uuid = _parse_uuid(payload.get('session_id'))
+        if parsed_uuid is not None:
+            session = VisitorSession.objects.filter(id=parsed_uuid).first()
+
+        claim = ClaimTrial.objects.create(
+            session=session,
+            user_name=fields['user_name'],
+            email=fields['email'],
+            phone_number=fields['phone_number'],
+            company_name=fields['company_name'],
+            industry=fields['industry'],
+            address=fields['address'],
+        )
+
+        return _ok(
+            data=ClaimTrialSerializer(claim).data,
+            message='Trial claim submitted successfully',
+            status_code=status.HTTP_201_CREATED,
+        )
+
+    def get(self, request):
+        qs = ClaimTrial.objects.select_related('session').all()
+
+        industry = request.query_params.get('industry', '').strip()
+        if industry:
+            qs = qs.filter(industry__icontains=industry)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(user_name__icontains=search)
+                | Q(email__icontains=search)
+                | Q(phone_number__icontains=search)
+                | Q(company_name__icontains=search)
+                | Q(industry__icontains=search)
+                | Q(address__icontains=search)
+            )
+
+        serializer = ClaimTrialSerializer(qs, many=True)
+        return _ok(
+            data={
+                'count': qs.count(),
+                'results': serializer.data,
+            },
+            message='Trial claims retrieved successfully',
+        )
+
+
+class ClaimTrialDetailView(APIView):
+    """
+    GET /api/expo_feedback/claim_trial/<claim_id>/ -> Retrieve a single Claim Trial record
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, claim_id):
+        parsed_uuid = _parse_uuid(claim_id)
+        if parsed_uuid is None:
+            return _not_found('Trial claim not found')
+
+        claim = ClaimTrial.objects.select_related('session').filter(id=parsed_uuid).first()
+        if claim is None:
+            return _not_found('Trial claim not found')
+
+        return _ok(
+            data=ClaimTrialSerializer(claim).data,
+            message='Trial claim retrieved successfully',
+        )
+
+
+class IndustryChoicesView(APIView):
+    """
+    GET /api/expo_feedback/claim_trial/industries/
+    GET /api/expo_feedback/industries/
+    Returns the dropdown options for the Claim Trial industry field.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        options = [
+            {'value': value, 'label': label}
+            for value, label in ClaimTrial.INDUSTRY_CHOICES
+        ]
+        return _ok(
+            data={
+                'placeholder': 'Select your industry',
+                'industries': options,
+            },
+            message='Industries retrieved successfully',
+        )
+
+

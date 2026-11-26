@@ -2,7 +2,7 @@ import uuid
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import VisitorSession, SessionFeedback
+from .models import VisitorSession, SessionFeedback, ClaimTrial
 
 
 class ExpoFeedbackAPITests(TestCase):
@@ -174,3 +174,118 @@ class ExpoFeedbackAPITests(TestCase):
         self.assertEqual(summary.data['data']['started_sessions'], 1)
         self.assertEqual(summary.data['data']['average_rating'], 5.0)
         self.assertEqual(summary.data['data']['rating_breakdown']['5'], 1)
+
+    def test_claim_trial_submit_list_filter_and_detail(self):
+        payload = {
+            'user_name': 'Riya Shah',
+            'email': 'riya@acmecorp.com',
+            'phone_number': '9876501234',
+            'company_name': 'Acme Corp',
+            'industry': 'Retail',
+            'address': '401 SG Highway, Ahmedabad, Gujarat',
+        }
+        res = self.client.post('/api/expo_feedback/claim_trial/', payload, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(res.data['success'])
+        claim_id = res.data['data']['id']
+        self.assertEqual(res.data['data']['user_name'], 'Riya Shah')
+        self.assertEqual(res.data['data']['email'], 'riya@acmecorp.com')
+        self.assertEqual(res.data['data']['phone_number'], '9876501234')
+        self.assertEqual(res.data['data']['company_name'], 'Acme Corp')
+        self.assertEqual(res.data['data']['industry'], 'Retail')
+        self.assertEqual(res.data['data']['address'], '401 SG Highway, Ahmedabad, Gujarat')
+        self.assertIsNone(res.data['data']['session_id'])
+
+        # Duplicate submission is also accepted (never rejected)
+        dup = self.client.post('/api/expo_feedback/claim_trial/', payload, format='json')
+        self.assertEqual(dup.status_code, 201)
+        self.assertEqual(ClaimTrial.objects.count(), 2)
+
+        # Detail endpoint
+        detail = self.client.get(f'/api/expo_feedback/claim_trial/{claim_id}/')
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data['data']['id'], claim_id)
+
+        # List & filters
+        listed = self.client.get('/api/expo_feedback/claim_trial/?industry=retail&search=Acme')
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.data['data']['count'], 2)
+
+    def test_claim_trial_optional_session_and_permissive_inputs(self):
+        # Create a session first
+        entry = self.client.post(
+            '/api/expo_feedback/entry/',
+            {'user_name': 'Linked User'},
+            format='json',
+        )
+        sid = entry.data['data']['session_id']
+
+        # Submit claim with aliases + linked session_id + stale JWT header
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer stale.token.here')
+        linked = self.client.post(
+            '/api/expo_feedback/claim_trial/',
+            {
+                'session_id': sid,
+                'name': 'Linked User',
+                'email_id': 'linked@test.com',
+                'mobile': '9123456789',
+                'company': 'TechNova',
+                'industry_type': 'IT Services',
+                'company_address': 'Pune',
+            },
+            format='json',
+        )
+        self.assertEqual(linked.status_code, 201)
+        self.assertEqual(linked.data['data']['session_id'], sid)
+        self.assertEqual(linked.data['data']['company_name'], 'TechNova')
+
+        # Completely empty claim still succeeds
+        empty_res = self.client.post('/api/expo_feedback/claim_trial/', {}, format='json')
+        self.assertEqual(empty_res.status_code, 201)
+
+    def test_industry_dropdown_endpoint_and_normalization(self):
+        # Dropdown endpoint returns all 12 industries
+        res = self.client.get('/api/expo_feedback/claim_trial/industries/')
+        self.assertEqual(res.status_code, 200)
+        industries = res.data['data']['industries']
+        self.assertEqual(len(industries), 12)
+        values = [item['value'] for item in industries]
+        self.assertEqual(values, [
+            'IT & Software',
+            'Retail & E-Commerce',
+            'Automotive',
+            'Real Estate & Housing',
+            'Healthcare',
+            'Finance & Insurance',
+            'Manufacturing',
+            'Education',
+            'Hospitality & Travel',
+            'Logistics & Supply Chain',
+            'Professional Services',
+            'Other',
+        ])
+
+        # Alias route also works
+        alias_res = self.client.get('/api/expo_feedback/industries/')
+        self.assertEqual(alias_res.status_code, 200)
+        self.assertEqual(len(alias_res.data['data']['industries']), 12)
+
+        # Case-insensitive normalization to canonical dropdown value
+        norm_res = self.client.post(
+            '/api/expo_feedback/claim_trial/',
+            {'user_name': 'Case Test', 'industry': 'it & software'},
+            format='json',
+        )
+        self.assertEqual(norm_res.status_code, 201)
+        self.assertEqual(norm_res.data['data']['industry'], 'IT & Software')
+
+        # Placeholder text is cleaned to blank without rejecting
+        ph_res = self.client.post(
+            '/api/expo_feedback/claim_trial/',
+            {'user_name': 'Placeholder Test', 'industry': 'Select your industry'},
+            format='json',
+        )
+        self.assertEqual(ph_res.status_code, 201)
+        self.assertEqual(ph_res.data['data']['industry'], '')
+
+

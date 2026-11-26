@@ -5,6 +5,9 @@ from .views import (
     SessionDetailView,
     SessionListView,
     FeedbackSummaryView,
+    ClaimTrialView,
+    ClaimTrialDetailView,
+    IndustryChoicesView,
 )
 
 app_name = 'expo_feedback'
@@ -16,4 +19,8 @@ urlpatterns = [
     path('sessions/<str:session_id>/', SessionDetailView.as_view(), name='session-detail'),
     path('sessions/<str:session_id>/feedback/', FeedbackSubmitView.as_view(), name='session-feedback-submit'),
     path('summary/', FeedbackSummaryView.as_view(), name='feedback-summary'),
+    path('industries/', IndustryChoicesView.as_view(), name='industries'),
+    path('claim_trial/', ClaimTrialView.as_view(), name='claim-trial'),
+    path('claim_trial/industries/', IndustryChoicesView.as_view(), name='claim-trial-industries'),
+    path('claim_trial/<str:claim_id>/', ClaimTrialDetailView.as_view(), name='claim-trial-detail'),
 ]

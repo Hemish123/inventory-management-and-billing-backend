@@ -67,3 +67,58 @@ class SessionFeedback(models.Model):
     def __str__(self):
         stars = f"{self.rating}/5" if self.rating is not None else "No rating"
         return f"Feedback {stars} — Session {str(self.session_id)[:8]}"
+
+
+class ClaimTrial(models.Model):
+    """
+    Stores details submitted via the Claim Trial form.
+    Optionally linked to a VisitorSession if session_id is supplied.
+    """
+
+    INDUSTRY_CHOICES = [
+        ('IT & Software', 'IT & Software'),
+        ('Retail & E-Commerce', 'Retail & E-Commerce'),
+        ('Automotive', 'Automotive'),
+        ('Real Estate & Housing', 'Real Estate & Housing'),
+        ('Healthcare', 'Healthcare'),
+        ('Finance & Insurance', 'Finance & Insurance'),
+        ('Manufacturing', 'Manufacturing'),
+        ('Education', 'Education'),
+        ('Hospitality & Travel', 'Hospitality & Travel'),
+        ('Logistics & Supply Chain', 'Logistics & Supply Chain'),
+        ('Professional Services', 'Professional Services'),
+        ('Other', 'Other'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        VisitorSession,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='trial_claims',
+    )
+    user_name = models.CharField(max_length=255, blank=True, default='')
+    email = models.CharField(max_length=255, blank=True, default='')
+    phone_number = models.CharField(max_length=50, blank=True, default='')
+    company_name = models.CharField(max_length=255, blank=True, default='')
+    industry = models.CharField(
+        max_length=255,
+        choices=INDUSTRY_CHOICES,
+        blank=True,
+        default='',
+    )
+    address = models.TextField(blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Claim Trial'
+        verbose_name_plural = 'Claim Trials'
+
+    def __str__(self):
+        label = self.user_name or self.company_name or self.email or str(self.id)[:8]
+        return f"Trial Claim: {label}"
+

@@ -2,7 +2,7 @@ import csv
 from io import StringIO
 from django.contrib import admin
 from django.http import HttpResponse
-from .models import VisitorSession, SessionFeedback
+from .models import VisitorSession, SessionFeedback, ClaimTrial
 
 
 class SessionFeedbackInline(admin.TabularInline):
@@ -67,3 +67,52 @@ class SessionFeedbackAdmin(admin.ModelAdmin):
     list_filter = ('rating', 'submitted_at')
     search_fields = ('session__user_name', 'session__email_id', 'session__phone_number', 'feedback_description')
     readonly_fields = ('id', 'submitted_at')
+
+
+@admin.register(ClaimTrial)
+class ClaimTrialAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'user_name',
+        'email',
+        'phone_number',
+        'company_name',
+        'industry',
+        'created_at',
+    )
+    list_filter = ('industry', 'created_at')
+    search_fields = ('id', 'user_name', 'email', 'phone_number', 'company_name', 'industry', 'address')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    actions = ['export_csv']
+
+    @admin.action(description='Export selected trial claims as CSV')
+    def export_csv(self, request, queryset):
+        buf = StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            'id',
+            'session_id',
+            'user_name',
+            'email',
+            'phone_number',
+            'company_name',
+            'industry',
+            'address',
+            'created_at',
+        ])
+        for c in queryset:
+            writer.writerow([
+                str(c.id),
+                str(c.session_id) if c.session_id else '',
+                c.user_name,
+                c.email,
+                c.phone_number,
+                c.company_name,
+                c.industry,
+                c.address,
+                c.created_at.isoformat() if c.created_at else '',
+            ])
+        response = HttpResponse(buf.getvalue(), content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="expo_claim_trials.csv"'
+        return response
+
