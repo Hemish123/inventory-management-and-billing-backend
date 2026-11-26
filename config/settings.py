@@ -232,9 +232,15 @@ SIMPLE_JWT = {
 }
 
 # CORS
+from corsheaders.defaults import default_headers
+
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://nice-bay-0ae59f000.5.azurestaticapps.net','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net', 'https://retailtrack.jmstech.co', 'https://api.retailtrack.jmstech.co']
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    *default_headers,
+    'x-admin-pin',
+]
 
 # Azure OpenAI — removed during RetailTrack refactor
 
@@ -368,3 +374,6 @@ AZURE_STORAGE_ACCOUNT_KEY = os.environ.get('AZURE_ACCOUNT_KEY')
 AZURE_STORAGE_CONTAINER = os.environ.get('AZURE_CONTAINER', 'media')
 AZURE_STORAGE_CONNECTION_STRING = os.environ.get('AZURE_STORAGE_CONNECTION_STRING', '')
 AZURE_SAS_EXPIRY_MINUTES = 10
+
+# Expo Feedback Voice Agents Admin PIN (must match frontend VITE_ADMIN_PIN)
+EXPO_ADMIN_PIN = os.environ.get('EXPO_ADMIN_PIN') or os.environ.get('VITE_ADMIN_PIN', '')

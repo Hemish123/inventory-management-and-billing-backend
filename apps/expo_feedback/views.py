@@ -1,4 +1,6 @@
+import hmac
 import uuid
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
@@ -7,11 +9,12 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import VisitorSession, SessionFeedback, ClaimTrial
+from .models import VisitorSession, SessionFeedback, ClaimTrial, ExpoVoiceAgent
 from .serializers import (
     VisitorSessionSerializer,
     SessionFeedbackSerializer,
     ClaimTrialSerializer,
+    ExpoVoiceAgentSerializer,
     extract_entry_fields,
     extract_feedback_fields,
     extract_claim_trial_fields,
@@ -412,5 +415,147 @@ class IndustryChoicesView(APIView):
             },
             message='Industries retrieved successfully',
         )
+
+
+def _error_response(message='Validation error', errors=None, status_code=status.HTTP_400_BAD_REQUEST):
+    if errors and message == 'Validation error':
+        try:
+            first_field = next(iter(errors))
+            first_err = errors[first_field]
+            if isinstance(first_err, list) and first_err:
+                message = str(first_err[0])
+            elif isinstance(first_err, str):
+                message = first_err
+        except Exception:
+            pass
+    return Response(
+        {
+            'success': False,
+            'message': message,
+            'data': None,
+            'errors': errors,
+        },
+        status=status_code,
+    )
+
+
+def _check_admin_pin(request):
+    """
+    Validate X-Admin-Pin header against settings.EXPO_ADMIN_PIN.
+    Returns (is_valid, error_response_or_None).
+    """
+    expected_pin = str(getattr(settings, 'EXPO_ADMIN_PIN', '') or '').strip()
+    if not expected_pin:
+        return False, _error_response(
+            message='Admin PIN is not configured on the server.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    provided_pin = str(request.headers.get('X-Admin-Pin', '') or '').strip()
+    if not provided_pin or not hmac.compare_digest(provided_pin, expected_pin):
+        return False, _error_response(
+            message='Invalid or missing admin PIN.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    return True, None
+
+
+class ExpoVoiceAgentListCreateView(APIView):
+    """
+    GET  /api/expo_feedback/agents/ -> Public list of all voice agents
+    POST /api/expo_feedback/agents/ -> Admin-PIN-protected creation of a voice agent
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        agents = ExpoVoiceAgent.objects.all()
+        serializer = ExpoVoiceAgentSerializer(agents, many=True)
+        return _ok(
+            data={
+                'count': agents.count(),
+                'results': serializer.data,
+            },
+            message='Voice agents retrieved successfully',
+        )
+
+    def post(self, request):
+        is_valid, err_resp = _check_admin_pin(request)
+        if not is_valid:
+            return err_resp
+
+        serializer = ExpoVoiceAgentSerializer(data=request.data)
+        if serializer.is_valid():
+            agent = serializer.save()
+            return _ok(
+                data=ExpoVoiceAgentSerializer(agent).data,
+                message='Voice agent created successfully',
+                status_code=status.HTTP_201_CREATED,
+            )
+        return _error_response(
+            message='Validation error',
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ExpoVoiceAgentDetailView(APIView):
+    """
+    GET    /api/expo_feedback/agents/<agent_id>/ -> Public fetch of a single agent
+    PATCH  /api/expo_feedback/agents/<agent_id>/ -> Admin-PIN-protected partial update
+    DELETE /api/expo_feedback/agents/<agent_id>/ -> Admin-PIN-protected delete
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, agent_id):
+        agent = ExpoVoiceAgent.objects.filter(id=agent_id).first()
+        if agent is None:
+            return _not_found('Voice agent not found')
+        return _ok(
+            data=ExpoVoiceAgentSerializer(agent).data,
+            message='Voice agent retrieved successfully',
+        )
+
+    def patch(self, request, agent_id):
+        is_valid, err_resp = _check_admin_pin(request)
+        if not is_valid:
+            return err_resp
+
+        agent = ExpoVoiceAgent.objects.filter(id=agent_id).first()
+        if agent is None:
+            return _not_found('Voice agent not found')
+
+        serializer = ExpoVoiceAgentSerializer(agent, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated = serializer.save()
+            return _ok(
+                data=ExpoVoiceAgentSerializer(updated).data,
+                message='Voice agent updated successfully',
+            )
+        return _error_response(
+            message='Validation error',
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def delete(self, request, agent_id):
+        is_valid, err_resp = _check_admin_pin(request)
+        if not is_valid:
+            return err_resp
+
+        agent = ExpoVoiceAgent.objects.filter(id=agent_id).first()
+        if agent is None:
+            return _not_found('Voice agent not found')
+
+        deleted_id = agent.id
+        agent.delete()
+        return _ok(
+            data={'id': deleted_id},
+            message='Voice agent deleted successfully',
+        )
+
 
 

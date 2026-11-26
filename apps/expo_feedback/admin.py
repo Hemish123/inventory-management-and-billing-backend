@@ -2,7 +2,7 @@ import csv
 from io import StringIO
 from django.contrib import admin
 from django.http import HttpResponse
-from .models import VisitorSession, SessionFeedback, ClaimTrial
+from .models import VisitorSession, SessionFeedback, ClaimTrial, ExpoVoiceAgent
 
 
 class SessionFeedbackInline(admin.TabularInline):
@@ -115,4 +115,22 @@ class ClaimTrialAdmin(admin.ModelAdmin):
         response = HttpResponse(buf.getvalue(), content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="expo_claim_trials.csv"'
         return response
+
+
+@admin.register(ExpoVoiceAgent)
+class ExpoVoiceAgentAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'name',
+        'app_id',
+        'language',
+        'accent',
+        'include_agent_variables',
+        'created_at',
+        'updated_at',
+    )
+    list_filter = ('language', 'accent', 'include_agent_variables', 'created_at')
+    search_fields = ('id', 'name', 'app_id', 'description', 'language', 'accent')
+    readonly_fields = ('created_at', 'updated_at')
+
 

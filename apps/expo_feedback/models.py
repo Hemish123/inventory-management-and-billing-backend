@@ -122,3 +122,30 @@ class ClaimTrial(models.Model):
         label = self.user_name or self.company_name or self.email or str(self.id)[:8]
         return f"Trial Claim: {label}"
 
+
+class ExpoVoiceAgent(models.Model):
+    """
+    Stores voice agent configurations managed from the React admin UI
+    so all visitors opening the link see the updated list of agents.
+    """
+
+    id = models.SlugField(max_length=100, primary_key=True)
+    name = models.CharField(max_length=255)
+    app_id = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, default='')
+    language = models.CharField(max_length=100, blank=True, default='')
+    accent = models.CharField(max_length=100, blank=True, default='')
+    include_agent_variables = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = 'Expo Voice Agent'
+        verbose_name_plural = 'Expo Voice Agents'
+
+    def __str__(self):
+        return f"{self.name} ({self.id})"
+
+

@@ -1,8 +1,8 @@
 import uuid
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .models import VisitorSession, SessionFeedback, ClaimTrial
+from .models import VisitorSession, SessionFeedback, ClaimTrial, ExpoVoiceAgent
 
 
 class ExpoFeedbackAPITests(TestCase):
@@ -287,5 +287,101 @@ class ExpoFeedbackAPITests(TestCase):
         )
         self.assertEqual(ph_res.status_code, 201)
         self.assertEqual(ph_res.data['data']['industry'], '')
+
+    @override_settings(EXPO_ADMIN_PIN='123456')
+    def test_voice_agents_crud_and_admin_pin_protection(self):
+        # Public GET works without PIN
+        list_empty = self.client.get('/api/expo_feedback/agents/')
+        self.assertEqual(list_empty.status_code, 200)
+        self.assertEqual(list_empty.data['data']['count'], 0)
+        self.assertEqual(list_empty.data['data']['results'], [])
+
+        agent_payload = {
+            'id': 'retail-assistant',
+            'name': 'Retail Voice Assistant',
+            'app_id': 'app_retail_001',
+            'description': 'Helps expo visitors explore POS features.',
+            'language': 'English',
+            'accent': 'Indian',
+            'include_agent_variables': True,
+        }
+
+        # POST without PIN rejected with 403
+        no_pin = self.client.post('/api/expo_feedback/agents/', agent_payload, format='json')
+        self.assertEqual(no_pin.status_code, 403)
+
+        # POST with wrong PIN rejected with 403
+        wrong_pin = self.client.post(
+            '/api/expo_feedback/agents/',
+            agent_payload,
+            format='json',
+            HTTP_X_ADMIN_PIN='999999',
+        )
+        self.assertEqual(wrong_pin.status_code, 403)
+
+        # POST with valid PIN creates agent
+        created = self.client.post(
+            '/api/expo_feedback/agents/',
+            agent_payload,
+            format='json',
+            HTTP_X_ADMIN_PIN='123456',
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertTrue(created.data['success'])
+        self.assertEqual(created.data['data']['id'], 'retail-assistant')
+        self.assertEqual(created.data['data']['app_id'], 'app_retail_001')
+        self.assertTrue(created.data['data']['include_agent_variables'])
+
+        # Duplicate app_id rejected with 400
+        dup_app = self.client.post(
+            '/api/expo_feedback/agents/',
+            {'name': 'Another Agent', 'app_id': 'app_retail_001'},
+            format='json',
+            HTTP_X_ADMIN_PIN='123456',
+        )
+        self.assertEqual(dup_app.status_code, 400)
+
+        # POST without explicit id auto-generates slug from name
+        auto_slug = self.client.post(
+            '/api/expo_feedback/agents/',
+            {
+                'name': 'Healthcare Support Bot',
+                'app_id': 'app_health_002',
+                'language': 'Hindi',
+                'accent': 'Neutral',
+            },
+            format='json',
+            HTTP_X_ADMIN_PIN='123456',
+        )
+        self.assertEqual(auto_slug.status_code, 201)
+        self.assertEqual(auto_slug.data['data']['id'], 'healthcare-support-bot')
+        self.assertFalse(auto_slug.data['data']['include_agent_variables'])
+
+        # Public GET now returns both agents
+        listed = self.client.get('/api/expo_feedback/agents/')
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.data['data']['count'], 2)
+
+        # DELETE without PIN rejected with 403
+        del_no_pin = self.client.delete('/api/expo_feedback/agents/retail-assistant/')
+        self.assertEqual(del_no_pin.status_code, 403)
+        self.assertEqual(ExpoVoiceAgent.objects.count(), 2)
+
+        # DELETE with valid PIN succeeds
+        del_ok = self.client.delete(
+            '/api/expo_feedback/agents/retail-assistant/',
+            HTTP_X_ADMIN_PIN='123456',
+        )
+        self.assertEqual(del_ok.status_code, 200)
+        self.assertTrue(del_ok.data['success'])
+        self.assertEqual(ExpoVoiceAgent.objects.count(), 1)
+
+        # DELETE non-existent agent returns 404
+        del_404 = self.client.delete(
+            '/api/expo_feedback/agents/does-not-exist/',
+            HTTP_X_ADMIN_PIN='123456',
+        )
+        self.assertEqual(del_404.status_code, 404)
+
 
 
