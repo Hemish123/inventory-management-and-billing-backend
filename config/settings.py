@@ -247,6 +247,8 @@ CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://onesuit.jmstech.co','ht
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://onesuit.jmstech.co','https://nice-bay-0ae59f000.5.azurestaticapps.net','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net', 'https://retailtrack.jmstech.co', 'https://api.retailtrack.jmstech.co']
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = ['http://localhost:5173','https://onesuit.jmstech.co','https://nice-bay-0ae59f000.5.azurestaticapps.net','https://msmepaytrackfrontend-eza8erfadvgdbha0.centralindia-01.azurewebsites.net', 'https://gray-sea-0ec486900.7.azurestaticapps.net', 'https://retailtrack.jmstech.co', 'https://api.retailtrack.jmstech.co']
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     *default_headers,
     'x-admin-pin',
