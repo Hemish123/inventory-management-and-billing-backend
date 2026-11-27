@@ -505,6 +505,36 @@ class UserCreditView(APIView):
     Returns the user's available credits, lifetime statistics, and recent transactions.
     Optional query params: ?email=<email> or ?user_id=<id>
     """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        User = get_user_model()
+        user = None
+
+        user_id = request.query_params.get('user_id')
+        email = request.query_params.get('email', '').strip()
+
+        if user_id:
+            user = User.objects.filter(pk=user_id).first()
+        elif email:
+            user = User.objects.filter(email__iexact=email).first()
+        elif getattr(request, 'user', None) and request.user.is_authenticated:
+            user = request.user
+        else:
+            user = User.objects.order_by('id').first()
+
+        if not user:
+            return _not_found('No user found to retrieve credits for.')
+
+        user_credit = get_or_create_user_credit(user)
+        return _ok(
+            data=UserCreditSerializer(user_credit).data,
+            message='User credits retrieved successfully',
+        )
+
+
 def _error_response(message='Validation error', errors=None, status_code=status.HTTP_400_BAD_REQUEST):
     if errors and message == 'Validation error':
         try:
@@ -558,31 +588,6 @@ class ExpoVoiceAgentListCreateView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        User = get_user_model()
-        user = None
-
-        user_id = request.query_params.get('user_id')
-        email = request.query_params.get('email', '').strip()
-
-        if user_id:
-            user = User.objects.filter(pk=user_id).first()
-        elif email:
-            user = User.objects.filter(email__iexact=email).first()
-        elif getattr(request, 'user', None) and request.user.is_authenticated:
-            user = request.user
-        else:
-            user = User.objects.order_by('id').first()
-
-        if not user:
-            return _not_found('No user found to retrieve credits for.')
-
-        user_credit = get_or_create_user_credit(user)
-        return _ok(
-            data=UserCreditSerializer(user_credit).data,
-            message='User credits retrieved successfully',
-        )
-
-
         agents = ExpoVoiceAgent.objects.all()
         serializer = ExpoVoiceAgentSerializer(agents, many=True)
         return _ok(
